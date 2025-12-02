@@ -1,0 +1,15 @@
+fastapi
+uvicorn
+sqlalchemy
+pydantic
+pandas
+scikit-learn
+sentence-transformers
+beautifulsoup4
+requests
+PyJWT
+pyotp
+passlib[bcrypt]
+qrcode
+pillow
+openai

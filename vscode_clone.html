@@ -1,0 +1,2514 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CodeForge Studio - VS Code Clone with AI</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.9.6/ace.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.6/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.6/dist/purify.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
+            background: #1e1e1e;
+            color: #d4d4d4;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        .container {
+            display: flex;
+            height: 100vh;
+            width: 100vw;
+        }
+
+        /* ============= ACTIVITY BAR (Left sidebar icon bar) ============= */
+        .activity-bar {
+            width: 50px;
+            background: #333333;
+            border-right: 1px solid #3e3e42;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 10px 0;
+            gap: 10px;
+        }
+
+        .activity-icon {
+            width: 40px;
+            height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            border-radius: 4px;
+            font-size: 20px;
+            transition: all 0.2s;
+            border-left: 3px solid transparent;
+        }
+
+        .activity-icon:hover {
+            background: #2d2d30;
+        }
+
+        .activity-icon.active {
+            background: #7c3aed;
+            border-left-color: #7c3aed;
+            color: #fff;
+        }
+
+        /* ============= SIDEBAR (File Explorer, Source Control, etc) ============= */
+        .sidebar {
+            width: 300px;
+            background: #252526;
+            border-right: 1px solid #3e3e42;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .sidebar-header {
+            padding: 12px 16px;
+            border-bottom: 1px solid #3e3e42;
+            font-weight: 600;
+            font-size: 13px;
+            text-transform: uppercase;
+            color: #cccccc;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .sidebar-header-buttons {
+            display: flex;
+            gap: 8px;
+        }
+
+        .sidebar-header-buttons button {
+            width: 24px;
+            height: 24px;
+            border: none;
+            background: transparent;
+            color: #cccccc;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 3px;
+            font-size: 12px;
+        }
+
+        .sidebar-header-buttons button:hover {
+            background: #3e3e42;
+        }
+
+        .sidebar-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 8px 0;
+        }
+
+        /* File Tree */
+        .file-tree {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .folder-item, .file-item {
+            display: flex;
+            align-items: center;
+            padding: 4px 8px;
+            cursor: pointer;
+            user-select: none;
+            font-size: 13px;
+            color: #cccccc;
+            transition: background 0.1s;
+        }
+
+        .folder-item:hover, .file-item:hover {
+            background: #2d2d30;
+        }
+
+        .file-item.active {
+            background: #37373d;
+            color: #fff;
+        }
+
+        .folder-toggle {
+            width: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-right: 4px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+
+        .folder-toggle.collapsed::before {
+            content: '▶';
+        }
+
+        .folder-toggle.expanded::before {
+            content: '▼';
+        }
+
+        .file-icon {
+            width: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-right: 6px;
+            font-size: 12px;
+        }
+
+        .folder-contents {
+            display: flex;
+            flex-direction: column;
+            margin-left: 12px;
+        }
+
+        .folder-contents.hidden {
+            display: none;
+        }
+
+        /* ============= MAIN EDITOR AREA ============= */
+        .editor-area {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            background: #1e1e1e;
+            overflow: hidden;
+        }
+
+        /* Tab Bar */
+        .tab-bar {
+            background: #252526;
+            border-bottom: 1px solid #3e3e42;
+            display: flex;
+            align-items: center;
+            height: 35px;
+            overflow-x: auto;
+            overflow-y: hidden;
+            padding-left: 8px;
+        }
+
+        .tab {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 0 12px;
+            height: 35px;
+            border-right: 1px solid #3e3e42;
+            cursor: pointer;
+            font-size: 13px;
+            color: #858585;
+            transition: all 0.2s;
+            white-space: nowrap;
+            flex-shrink: 0;
+        }
+
+        .tab:hover {
+            background: #2d2d30;
+            color: #cccccc;
+        }
+
+        .tab.active {
+            background: #1e1e1e;
+            color: #fff;
+            border-bottom: 2px solid #7c3aed;
+        }
+
+        .tab-close {
+            width: 16px;
+            height: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 2px;
+            font-size: 12px;
+            cursor: pointer;
+            opacity: 0.6;
+            transition: opacity 0.2s;
+        }
+
+        .tab-close:hover {
+            background: #3e3e42;
+            opacity: 1;
+        }
+
+        /* Editor Container */
+        .editor-container {
+            flex: 1;
+            display: flex;
+            overflow: hidden;
+        }
+
+        .editor-content {
+            flex: 1;
+            position: relative;
+        }
+
+        #ace-editor {
+            width: 100%;
+            height: 100%;
+            font-size: 14px;
+        }
+
+        .file-status {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: #7c3aed;
+            color: #fff;
+            padding: 4px 8px;
+            border-radius: 3px;
+            font-size: 11px;
+            z-index: 10;
+            display: none;
+        }
+
+        .file-status.show {
+            display: block;
+        }
+
+        /* ============= RIGHT PANEL: AI CHAT ============= */
+        .chat-panel {
+            width: 400px;
+            background: #252526;
+            border-left: 1px solid #3e3e42;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            box-shadow: -2px 0 8px rgba(0,0,0,0.3);
+        }
+
+        .chat-header {
+            padding: 12px 16px;
+            border-bottom: 1px solid #3e3e42;
+            font-weight: 600;
+            font-size: 14px;
+            text-transform: uppercase;
+            color: #cccccc;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: #1a1a1a;
+        }
+
+        .chat-header span {
+            font-size: 10px;
+            background: #7c3aed;
+            color: white;
+            padding: 2px 6px;
+            border-radius: 3px;
+        }
+
+        .chat-modes {
+            display: flex;
+            gap: 4px;
+            margin-bottom: 8px;
+            flex-wrap: wrap;
+        }
+
+        .chat-mode-btn {
+            padding: 6px 10px;
+            border: 1px solid #3e3e42;
+            background: transparent;
+            color: #858585;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 12px;
+            transition: all 0.2s;
+            flex: 1;
+            min-width: 60px;
+        }
+
+        .chat-mode-btn:hover {
+            border-color: #7c3aed;
+            color: #7c3aed;
+            background: rgba(124, 58, 237, 0.1);
+        }
+
+        .chat-mode-btn.active {
+            background: #7c3aed;
+            border-color: #7c3aed;
+            color: #fff;
+        }
+
+        .chat-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            background: #1e1e1e;
+        }
+
+        .chat-messages::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .chat-messages::-webkit-scrollbar-track {
+            background: #252526;
+        }
+
+        .chat-messages::-webkit-scrollbar-thumb {
+            background: #3e3e42;
+            border-radius: 4px;
+        }
+
+        .chat-messages::-webkit-scrollbar-thumb:hover {
+            background: #555555;
+        }
+
+        .message {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .message.user {
+            align-items: flex-end;
+        }
+
+        .message.assistant {
+            align-items: flex-start;
+        }
+
+        .message-content {
+            max-width: 90%;
+            padding: 10px 12px;
+            border-radius: 4px;
+            font-size: 13px;
+            line-height: 1.4;
+            word-wrap: break-word;
+            animation: fadeIn 0.3s ease;
+        }
+
+        .message.user .message-content {
+            background: #0e639c;
+            color: #fff;
+        }
+
+        .message.assistant .message-content {
+            background: #3e3e42;
+            color: #e0e0e0;
+        }
+
+        .message.assistant .message-content code {
+            background: #1e1e1e;
+            padding: 2px 4px;
+            border-radius: 2px;
+            font-family: 'Courier New', monospace;
+            color: #ce9178;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(5px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .chat-input-area {
+            border-top: 1px solid #3e3e42;
+            padding: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            background: #1a1a1a;
+        }
+
+        .chat-input-wrapper {
+            display: flex;
+            gap: 8px;
+            align-items: flex-end;
+        }
+
+        #chat-input {
+            flex: 1;
+            background: #3e3e42;
+            border: 1px solid #555555;
+            border-radius: 4px;
+            color: #d4d4d4;
+            padding: 8px 10px;
+            font-size: 13px;
+            font-family: inherit;
+            resize: none;
+            max-height: 100px;
+            line-height: 1.3;
+        }
+
+        #chat-input:focus {
+            outline: none;
+            border-color: #7c3aed;
+            background: #3e3e42;
+            box-shadow: 0 0 8px rgba(124, 58, 237, 0.3);
+        }
+
+        .chat-send-btn {
+            width: 36px;
+            height: 36px;
+            border: none;
+            background: #7c3aed;
+            color: #fff;
+            border-radius: 4px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 16px;
+            transition: all 0.2s;
+            flex-shrink: 0;
+        }
+
+        .chat-send-btn:hover {
+            background: #9a6bff;
+            box-shadow: 0 0 12px rgba(124, 58, 237, 0.5);
+        }
+
+        .chat-send-btn:active {
+            transform: scale(0.95);
+        }
+
+        .chat-send-btn:disabled {
+            background: #555555;
+            cursor: not-allowed;
+            opacity: 0.6;
+        }
+
+        .chat-controls {
+            display: flex;
+            gap: 8px;
+            flex-direction: column;
+            font-size: 12px;
+        }
+
+        .chat-control-item {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            color: #9a86ff;
+        }
+
+        .chat-control-item input {
+            cursor: pointer;
+        }
+
+        .chat-control-item input:checked {
+            accent-color: #7c3aed;
+        }
+
+        .auth-section {
+            border-top: 1px solid #3e3e42;
+            padding-top: 8px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        #admin-token-status {
+            font-size: 11px;
+            color: #7c3aed;
+            padding: 4px 0;
+        }
+
+        .auth-buttons {
+            display: flex;
+            gap: 4px;
+        }
+
+        .auth-buttons button {
+            flex: 1;
+            padding: 6px;
+            font-size: 11px;
+            border: 1px solid #3e3e42;
+            background: #3e3e42;
+            color: #d4d4d4;
+            border-radius: 3px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .auth-buttons button:hover {
+            background: #555555;
+            border-color: #7c3aed;
+            color: #7c3aed;
+        }
+
+        .auth-buttons button:first-child {
+            background: #7c3aed;
+            border-color: #7c3aed;
+            color: white;
+        }
+
+        .auth-buttons button:first-child:hover {
+            background: #9a6bff;
+        }
+
+        /* ============= STATUS BAR ============= */
+        .status-bar {
+            height: 24px;
+            background: #7c3aed;
+            color: #fff;
+            display: flex;
+            align-items: center;
+            padding: 0 16px;
+            font-size: 12px;
+            gap: 20px;
+            border-top: 1px solid #3e3e42;
+        }
+
+        .status-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            cursor: pointer;
+        }
+
+        .status-item:hover {
+            opacity: 0.8;
+        }
+
+        /* ============= SOURCE CONTROL PANEL ============= */
+        .source-control-panel {
+            padding: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .sc-section {
+            border-bottom: 1px solid #3e3e42;
+            padding-bottom: 10px;
+        }
+
+        .sc-section-title {
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            color: #858585;
+            margin-bottom: 8px;
+        }
+
+        .sc-changes {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            font-size: 12px;
+        }
+
+        .sc-change-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px;
+            border-radius: 2px;
+            cursor: pointer;
+            transition: background 0.1s;
+        }
+
+        .sc-change-item:hover {
+            background: #2d2d30;
+        }
+
+        .sc-status {
+            width: 14px;
+            height: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 10px;
+        }
+
+        .sc-status.added { color: #89d185; }
+        .sc-status.modified { color: #dcdcaa; }
+        .sc-status.deleted { color: #f48771; }
+
+        .sc-input {
+            width: 100%;
+            background: #3e3e42;
+            border: 1px solid #555555;
+            border-radius: 3px;
+            color: #d4d4d4;
+            padding: 6px 8px;
+            font-size: 12px;
+            margin-bottom: 8px;
+        }
+
+        .sc-btn {
+            width: 100%;
+            padding: 6px;
+            background: #007acc;
+            color: #fff;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 12px;
+            transition: background 0.2s;
+        }
+
+        .sc-btn:hover {
+            background: #1084d7;
+        }
+
+        /* ============= SCROLLBAR ============= */
+        ::-webkit-scrollbar {
+            width: 12px;
+            height: 12px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #7c3aed;
+            border-radius: 6px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #9a6bff;
+        }
+
+        /* ============= ANIMATIONS ============= */
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        .fade-in {
+            animation: fadeIn 0.2s ease-in;
+        }
+
+        /* ============= MODALS ============= */
+        .modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.6);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            display: none;
+        }
+
+        .modal.show {
+            display: flex;
+        }
+
+        .modal-content {
+            background: #252526;
+            border: 1px solid #3e3e42;
+            border-radius: 4px;
+            padding: 16px;
+            max-width: 500px;
+            width: 90%;
+        }
+
+        .modal-title {
+            font-weight: 600;
+            font-size: 14px;
+            margin-bottom: 12px;
+            color: #fff;
+        }
+
+        .modal-input {
+            width: 100%;
+            background: #3e3e42;
+            border: 1px solid #555555;
+            border-radius: 3px;
+            color: #d4d4d4;
+            padding: 8px;
+            font-size: 13px;
+            margin-bottom: 12px;
+        }
+
+        .modal-buttons {
+            display: flex;
+            gap: 8px;
+            justify-content: flex-end;
+        }
+
+        .modal-btn {
+            padding: 6px 16px;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 12px;
+            transition: all 0.2s;
+        }
+
+        .modal-btn.primary {
+            background: #007acc;
+            color: #fff;
+        }
+
+        .modal-btn.primary:hover {
+            background: #1084d7;
+        }
+
+        .modal-btn.secondary {
+            background: #3e3e42;
+            color: #cccccc;
+        }
+
+        .modal-btn.secondary:hover {
+            background: #464647;
+        }
+
+        /* Hidden elements */
+        .hidden {
+            display: none;
+        }
+
+        /* ============= SPLIT EDITOR STYLES ============= */
+        #split-editor-pane {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            background: #1e1e1e;
+            border-left: 1px solid #3e3e42;
+        }
+
+        #split-ace-editor {
+            flex: 1;
+            width: 100%;
+            height: 100%;
+        }
+
+        /* ============= FUZZY SEARCH STYLES ============= */
+        #fuzzy-overlay {
+            animation: fadeIn 0.2s ease-in;
+        }
+
+        #fuzzy-input {
+            font-family: inherit;
+        }
+
+        #fuzzy-results {
+            max-height: 400px;
+        }
+
+        #fuzzy-results [data-selected] {
+            background: #37373d !important;
+        }
+    </style>
+</head>
+
+<body>
+    <!-- Menu Bar -->
+    <div id="menu-bar" style="height:28px; background:#1b1b1b; color:#d4d4d4; display:flex; align-items:center; gap:12px; padding:0 8px; border-bottom:1px solid #2f2f33;">
+        <div class="menu" style="position:relative;">
+            <div class="menu-title" style="padding:4px 8px; cursor:pointer;">File</div>
+            <div class="menu-items hidden" style="position:absolute; top:28px; left:0; background:#252526; border:1px solid #3e3e42; min-width:220px; z-index:1000;">
+                <div class="menu-item" onclick="newFile()" style="padding:6px 10px; cursor:pointer;">New File</div>
+                <div class="menu-item" onclick="newFolder()" style="padding:6px 10px; cursor:pointer;">New Folder</div>
+                <div class="menu-item" onclick="importFolderPrompt()" style="padding:6px 10px; cursor:pointer;">Import Folder (from server)</div>
+                <div class="menu-item" onclick="importFolderLocal()" style="padding:6px 10px; cursor:pointer;">Add Existing Folder (Upload)</div>
+                <div class="menu-item" onclick="saveCurrentFile()" style="padding:6px 10px; cursor:pointer;">Save</div>
+                <div class="menu-item" onclick="deleteCurrentFile()" style="padding:6px 10px; cursor:pointer;">Delete File</div>
+            </div>
+        </div>
+        <div class="menu" style="position:relative;">
+            <div class="menu-title" style="padding:4px 8px; cursor:pointer;">Edit</div>
+            <div class="menu-items hidden" style="position:absolute; top:28px; left:0; background:#252526; border:1px solid #3e3e42; min-width:160px; z-index:1000;">
+                <div class="menu-item" style="padding:6px 10px; cursor:pointer;" onclick="document.execCommand('undo')">Undo</div>
+                <div class="menu-item" style="padding:6px 10px; cursor:pointer;" onclick="document.execCommand('redo')">Redo</div>
+                <div class="menu-item" style="padding:6px 10px; cursor:pointer;" onclick="document.execCommand('cut')">Cut</div>
+                <div class="menu-item" style="padding:6px 10px; cursor:pointer;" onclick="document.execCommand('copy')">Copy</div>
+                <div class="menu-item" style="padding:6px 10px; cursor:pointer;" onclick="document.execCommand('paste')">Paste</div>
+            </div>
+        </div>
+        <div class="menu" style="position:relative;">
+            <div class="menu-title" style="padding:4px 8px; cursor:pointer;">Selection</div>
+        </div>
+        <div class="menu" style="position:relative;">
+            <div class="menu-title" style="padding:4px 8px; cursor:pointer;">View</div>
+            <div class="menu-items hidden" style="position:absolute; top:28px; left:0; background:#252526; border:1px solid #3e3e42; min-width:140px; z-index:1000;">
+                <div class="menu-item" style="padding:6px 10px; cursor:pointer;" onclick="toggleSidebar()">Toggle Sidebar</div>
+                <div class="menu-item" style="padding:6px 10px; cursor:pointer;" onclick="toggleTerminal()">Toggle Terminal</div>
+            </div>
+        </div>
+        <div class="menu" style="position:relative;">
+            <div class="menu-title" style="padding:4px 8px; cursor:pointer;">Go</div>
+        </div>
+        <div class="menu" style="position:relative;">
+            <div class="menu-title" style="padding:4px 8px; cursor:pointer;">Run</div>
+            <div class="menu-items hidden" style="position:absolute; top:28px; left:0; background:#252526; border:1px solid #3e3e42; min-width:160px; z-index:1000;">
+                <div class="menu-item" style="padding:6px 10px; cursor:pointer;" onclick="runActiveFile()">Run File</div>
+                <div class="menu-item" style="padding:6px 10px; cursor:pointer;" onclick="runProject()">Run Project</div>
+            </div>
+        </div>
+        <div style="margin-left:auto; display:flex; gap:8px; align-items:center;">
+            <label style="font-size:12px; color:#9a86ff;">Autosave</label>
+            <input type="checkbox" id="autosave-toggle" />
+        </div>
+    </div>
+    <!-- Hidden folder input for importing local folders -->
+    <input id="folderInput" type="file" webkitdirectory directory multiple style="display:none" />
+
+    <div class="container">
+        <!-- Activity Bar -->
+        <div class="activity-bar">
+            <div class="activity-icon active" onclick="showPanel('explorer', this)" title="Explorer (Ctrl+B)">📁</div>
+            <div class="activity-icon" onclick="showPanel('search', this)" title="Search">🔍</div>
+            <div class="activity-icon" onclick="showPanel('git', this)" title="Source Control">🌿</div>
+            <div class="activity-icon" onclick="showPanel('extensions', this)" title="Extensions">📦</div>
+        </div>
+
+        <!-- Sidebar (File Explorer) -->
+        <div class="sidebar" id="sidebar">
+            <!-- File Explorer Panel -->
+            <div id="explorer-panel" class="sidebar-section">
+                <div class="sidebar-header">
+                    Explorer
+                    <div class="sidebar-header-buttons">
+                        <button onclick="newFile()" title="New File">+</button>
+                        <button onclick="newFolder()" title="New Folder">📁</button>
+                    </div>
+                </div>
+                <div class="sidebar-content">
+                    <div class="file-tree" id="file-tree"></div>
+                </div>
+            </div>
+
+            <!-- Source Control Panel -->
+            <div id="git-panel" class="sidebar-section hidden">
+                <div class="sidebar-header">
+                    Source Control
+                </div>
+                <div class="sidebar-content">
+                    <div class="source-control-panel">
+                        <div class="sc-section">
+                            <div class="sc-section-title">Changes</div>
+                            <div class="sc-changes" id="git-changes"></div>
+                        </div>
+                        <textarea class="sc-input" id="git-message" placeholder="Commit message..."></textarea>
+                        <button class="sc-btn" onclick="commitChanges()">Commit</button>
+                        <button class="sc-btn" onclick="showGitShare()">Share Repository</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Search Panel -->
+            <div id="search-panel" class="sidebar-section hidden">
+                <div class="sidebar-header">Search</div>
+                <div class="sidebar-content">
+                    <input type="text" id="search-input" placeholder="Search files..." style="width: 100%; padding: 8px; background: #3e3e42; border: 1px solid #555555; color: #d4d4d4; border-radius: 3px; margin: 8px;">
+                    <div id="search-results" style="padding: 8px;"></div>
+                </div>
+            </div>
+
+            <!-- Extensions Panel -->
+            <div id="extensions-panel" class="sidebar-section hidden">
+                <div class="sidebar-header">Extensions</div>
+                <div class="sidebar-content" style="padding: 12px;">
+                    <p style="color: #858585; font-size: 12px;">Language Support: JavaScript, Python, Java, C++, Go, Rust, TypeScript, PHP, Ruby, C#, HTML, CSS, JSON, XML, YAML, SQL and more...</p>
+                </div>
+            </div>
+
+            <!-- Dependencies Panel -->
+            <div id="deps-panel" class="sidebar-section hidden">
+                <div class="sidebar-header">
+                    Dependencies
+                    <div class="sidebar-header-buttons">
+                        <button onclick="checkDeps()" title="Check Dependencies">🔄</button>
+                    </div>
+                </div>
+                <div class="sidebar-content">
+                    <div id="deps-content" style="padding:12px; font-size:13px; color:#d4d4d4;"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Editor Area -->
+        <div class="editor-area">
+            <!-- Tab Bar -->
+            <div class="tab-bar" id="tab-bar"></div>
+
+            <!-- Editor -->
+            <div class="editor-container">
+                <div class="editor-content">
+                        <div id="ace-editor"></div>
+                        <div class="file-status" id="file-status">File modified</div>
+                        <!-- Save button removed: autosave is used instead -->
+                        <div id="terminal-panel" style="position:absolute; left:0; right:0; bottom:0; height:180px; background:#101010; border-top:1px solid #2f2f33; display:none; flex-direction:column; z-index:15;">
+                            <div style="display:flex; gap:8px; padding:6px; align-items:center; background:#0f0f10; border-bottom:1px solid #222;">
+                                <button onclick="toggleTerminal()" style="background:transparent; color:#d4d4d4; border:none; cursor:pointer;">Toggle</button>
+                                <button onclick="clearTerminal()" style="background:transparent; color:#d4d4d4; border:none; cursor:pointer;">Clear</button>
+                                <input id="terminal-cmd" placeholder="Type a shell command" style="flex:1; padding:6px; background:#111; border:1px solid #222; color:#d4d4d4;" />
+                                <button onclick="runTerminalCommand()" style="background:#7c3aed; color:white; border:none; padding:6px 10px; border-radius:4px; cursor:pointer;">Run</button>
+                            </div>
+                            <div id="terminal-output" style="padding:8px; overflow:auto; flex:1; font-family:monospace; font-size:12px; color:#d4d4d4;"></div>
+                        </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- AI Chat Panel -->
+        <div class="chat-panel">
+            <div class="chat-header">
+                💜 CodeForge AI
+                <span>BETA</span>
+            </div>
+
+            <div style="padding: 10px 12px; border-bottom: 1px solid #3e3e42; background: #1a1a1a;">
+                <div class="chat-modes">
+                    <button class="chat-mode-btn active" onclick="setChatMode('chat', this)">Chat</button>
+                    <button class="chat-mode-btn" onclick="setChatMode('code', this)">Code</button>
+                    <button class="chat-mode-btn" onclick="setChatMode('refactor', this)">Refactor</button>
+                    <button class="chat-mode-btn" onclick="setChatMode('explain', this)">Explain</button>
+                </div>
+            </div>
+
+            <div class="chat-messages" id="chat-messages"></div>
+
+            <div class="chat-input-area">
+                <div class="chat-input-wrapper">
+                    <textarea id="chat-input" placeholder="Ask CodeForge AI... (Ctrl+Enter)" rows="2"></textarea>
+                    <button class="chat-send-btn" onclick="sendChatMessage()" id="chat-send-btn" title="Send (Ctrl+Enter)">⬆</button>
+                </div>
+
+                <div class="chat-controls">
+                    <div class="chat-control-item">
+                        <input type="checkbox" id="fast-ai-toggle" />
+                        <label for="fast-ai-toggle">⚡ Fast AI</label>
+                    </div>
+                    <div class="chat-control-item">
+                        <input type="checkbox" id="auto-ai-toggle" />
+                        <label for="auto-ai-toggle">🤖 Auto AI</label>
+                    </div>
+                </div>
+
+                <div class="auth-section">
+                    <div id="admin-token-status">🔐 No auth token</div>
+                    <div class="auth-buttons">
+                        <button onclick="setAdminToken()" title="Set authentication token">Set Token</button>
+                        <button onclick="clearAdminToken()" title="Clear authentication token">Clear</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Status Bar -->
+    <div class="status-bar">
+        <div class="status-item" onclick="showPanel('git')">
+            <span id="git-status">● master</span>
+        </div>
+        <div class="status-item">
+            <span id="file-info">UTF-8 | LF | JavaScript</span>
+        </div>
+        <div class="status-item" onclick="toggleLineNumbers()">
+            <span id="cursor-position">Ln 1, Col 1</span>
+        </div>
+    </div>
+
+    <!-- Modals -->
+    <div class="modal" id="git-share-modal">
+        <div class="modal-content">
+            <div class="modal-title">Share Repository</div>
+            <input type="text" class="modal-input" id="share-path" placeholder="Enter partner folder path...">
+            <div class="modal-buttons">
+                <button class="modal-btn secondary" onclick="closeModal('git-share-modal')">Cancel</button>
+                <button class="modal-btn primary" onclick="performGitShare()">Share</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ============= GLOBAL STATE =============
+        const API_URL = 'http://localhost:5050/api';
+        let editor = null;
+        let currentFile = null;
+        let openTabs = [];
+        let activeTab = null;
+        let chatMode = 'chat';
+        let adminToken = localStorage.getItem('CODEFORGE_ADMIN_TOKEN') || '';
+        let files = {};
+        let gitChanges = {};
+
+        const languageModes = {
+            js: 'javascript', jsx: 'javascript', ts: 'typescript', tsx: 'typescript',
+            py: 'python', java: 'java', cpp: 'cpp', c: 'c_cpp', cs: 'csharp',
+            go: 'golang', rs: 'rust', php: 'php', rb: 'ruby', html: 'html',
+            css: 'css', scss: 'scss', json: 'json', xml: 'xml', yaml: 'yaml',
+            sql: 'sql', sh: 'sh', bash: 'bash'
+        };
+
+        // ============= SPLIT EDITOR STATE =============
+        let splitMode = false; // 'off', 'vertical', 'horizontal'
+        let splitEditors = { main: null, split: null };
+        let splitFile = null;
+
+        // ============= INITIALIZATION =============
+        function init() {
+            editor = ace.edit('ace-editor');
+            editor.setTheme('ace/theme/monokai');
+            editor.session.setOptions({ tabSize: 4, useSoftTabs: true });
+            editor.on('change', onEditorChange);
+            editor.on('changeSelection', onCursorMove);
+            splitEditors.main = editor;
+
+            // Don't auto-load root folder - let user choose
+            // loadFileTree();
+            updateAdminTokenDisplay();
+            setupChatInput();
+            setupFuzzySearch();
+            setupSplitEditor();
+
+            // Autosave toggle wiring
+            const autosave = document.getElementById('autosave-toggle');
+            if (autosave) {
+                autosave.checked = JSON.parse(localStorage.getItem('CODEFORGE_AUTOSAVE') || 'false');
+                autosave.addEventListener('change', () => {
+                    localStorage.setItem('CODEFORGE_AUTOSAVE', JSON.stringify(autosave.checked));
+                });
+            }
+
+            // Keyboard shortcut: Ctrl/Cmd+S to save
+            window.addEventListener('keydown', (e) => {
+                if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+                    e.preventDefault();
+                    saveCurrentFile();
+                }
+            });
+
+            // Setup menu interactions (dropdowns)
+            setupMenuInteractions();
+
+            // Auto-AI toggle default OFF for safety
+            const autoAi = document.getElementById('auto-ai-toggle');
+            if (autoAi) {
+                autoAi.checked = JSON.parse(localStorage.getItem('CODEFORGE_AUTO_AI') || 'false');
+                autoAi.addEventListener('change', () => {
+                    localStorage.setItem('CODEFORGE_AUTO_AI', JSON.stringify(autoAi.checked));
+                });
+            }
+
+            console.log('✅ CodeForge Studio initialized');
+        }
+
+        // ============= FUZZY SEARCH (Ctrl+P) =============
+        let allFilesList = [];
+
+        function setupFuzzySearch() {
+            window.addEventListener('keydown', (e) => {
+                if ((e.ctrlKey || e.metaKey) && e.key === 'p') {
+                    e.preventDefault();
+                    showFuzzySearch();
+                }
+            });
+        }
+
+        function showFuzzySearch() {
+            const overlay = document.createElement('div');
+            overlay.id = 'fuzzy-overlay';
+            overlay.style.cssText = `
+                position: fixed;
+                top: 0;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                background: rgba(0,0,0,0.7);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                z-index: 2000;
+            `;
+
+            const dialog = document.createElement('div');
+            dialog.style.cssText = `
+                background: #252526;
+                border: 1px solid #3e3e42;
+                border-radius: 4px;
+                width: 600px;
+                max-height: 500px;
+                display: flex;
+                flex-direction: column;
+                box-shadow: 0 10px 40px rgba(0,0,0,0.8);
+            `;
+
+            const input = document.createElement('input');
+            input.id = 'fuzzy-input';
+            input.type = 'text';
+            input.placeholder = 'Find file (or press Esc)...';
+            input.style.cssText = `
+                padding: 12px;
+                background: #3e3e42;
+                border: none;
+                border-bottom: 1px solid #555555;
+                color: #d4d4d4;
+                font-size: 14px;
+            `;
+
+            const results = document.createElement('div');
+            results.id = 'fuzzy-results';
+            results.style.cssText = `
+                flex: 1;
+                overflow-y: auto;
+                padding: 0;
+            `;
+
+            dialog.appendChild(input);
+            dialog.appendChild(results);
+            overlay.appendChild(dialog);
+            document.body.appendChild(overlay);
+
+            input.focus();
+            input.addEventListener('input', (e) => fuzzyFilterFiles(e.target.value, results));
+            input.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape') closeFuzzySearch();
+                if (e.key === 'Enter') {
+                    const selected = results.querySelector('[data-selected]');
+                    if (selected) openFile(selected.getAttribute('data-path'));
+                    closeFuzzySearch();
+                }
+                if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    const items = results.querySelectorAll('[data-path]');
+                    const selected = results.querySelector('[data-selected]');
+                    if (!selected && items.length) {
+                        items[0].setAttribute('data-selected', 'true');
+                    } else if (selected) {
+                        selected.removeAttribute('data-selected');
+                        const next = selected.nextElementSibling;
+                        if (next) next.setAttribute('data-selected', 'true');
+                    }
+                }
+            });
+            overlay.addEventListener('click', (e) => {
+                if (e.target === overlay) closeFuzzySearch();
+            });
+
+            // Load all files into search
+            fuzzyFilterFiles('', results);
+        }
+
+        function fuzzyFilterFiles(query, resultsEl) {
+            if (allFilesList.length === 0 && openTabs.length > 0) {
+                allFilesList = openTabs.map(t => t.path);
+            }
+
+            let filtered = allFilesList;
+            if (query.trim()) {
+                const q = query.toLowerCase();
+                filtered = allFilesList.filter(f => f.toLowerCase().includes(q) || f.split('/').pop().toLowerCase().includes(q));
+                filtered.sort((a, b) => {
+                    const aScore = a.toLowerCase().indexOf(q);
+                    const bScore = b.toLowerCase().indexOf(q);
+                    return aScore - bScore;
+                });
+            }
+
+            resultsEl.innerHTML = '';
+            filtered.slice(0, 20).forEach((path, idx) => {
+                const item = document.createElement('div');
+                item.setAttribute('data-path', path);
+                if (idx === 0) item.setAttribute('data-selected', 'true');
+                item.style.cssText = `
+                    padding: 8px 12px;
+                    cursor: pointer;
+                    background: ${idx === 0 ? '#37373d' : 'transparent'};
+                    border-bottom: 1px solid #2d2d30;
+                    color: #d4d4d4;
+                    font-size: 13px;
+                    display: flex;
+                    justify-content: space-between;
+                `;
+                item.innerHTML = `
+                    <span>${getFileIcon(path)} ${path.split('/').pop()}</span>
+                    <span style="color:#858585; font-size:11px;">${path.split('/').slice(0,-1).join('/')}</span>
+                `;
+                item.addEventListener('click', () => {
+                    openFile(path);
+                    closeFuzzySearch();
+                });
+                item.addEventListener('mouseover', () => {
+                    resultsEl.querySelectorAll('[data-selected]').forEach(el => el.removeAttribute('data-selected'));
+                    item.setAttribute('data-selected', 'true');
+                });
+                resultsEl.appendChild(item);
+            });
+
+            if (filtered.length === 0) {
+                const noResults = document.createElement('div');
+                noResults.style.cssText = 'padding: 12px; color: #858585; text-align: center;';
+                noResults.textContent = 'No files found';
+                resultsEl.appendChild(noResults);
+            }
+        }
+
+        function closeFuzzySearch() {
+            const overlay = document.getElementById('fuzzy-overlay');
+            if (overlay) overlay.remove();
+        }
+
+        // ============= SPLIT EDITOR SETUP =============
+        function setupSplitEditor() {
+            // Add split buttons to editor container
+            const editorArea = document.querySelector('.editor-area');
+            const topBar = document.createElement('div');
+            topBar.style.cssText = `
+                display: flex;
+                gap: 8px;
+                padding: 4px 8px;
+                background: #252526;
+                border-bottom: 1px solid #3e3e42;
+                font-size: 12px;
+            `;
+            topBar.innerHTML = `
+                <button onclick="toggleSplitEditor('vertical')" style="background: transparent; border: 1px solid #555; color: #d4d4d4; padding: 4px 8px; border-radius: 2px; cursor: pointer;">Split Right</button>
+                <button onclick="toggleSplitEditor('horizontal')" style="background: transparent; border: 1px solid #555; color: #d4d4d4; padding: 4px 8px; border-radius: 2px; cursor: pointer;">Split Down</button>
+                <button onclick="closeSplitEditor()" style="background: transparent; border: 1px solid #555; color: #d4d4d4; padding: 4px 8px; border-radius: 2px; cursor: pointer;">Close Split</button>
+            `;
+            editorArea.insertBefore(topBar, editorArea.firstChild);
+        }
+
+        function toggleSplitEditor(type) {
+            if (splitMode && splitMode === type) {
+                closeSplitEditor();
+            } else {
+                openSplitEditor(type);
+            }
+        }
+
+        function openSplitEditor(type) {
+            if (splitMode) closeSplitEditor();
+
+            const container = document.querySelector('.editor-container');
+            const mainEditor = document.querySelector('.editor-content');
+
+            if (type === 'vertical') {
+                container.style.display = 'flex';
+                container.style.flexDirection = 'row';
+                mainEditor.style.flex = '1';
+            } else if (type === 'horizontal') {
+                container.style.display = 'flex';
+                container.style.flexDirection = 'column';
+                mainEditor.style.flex = '1';
+            }
+
+            const splitEl = document.createElement('div');
+            splitEl.id = 'split-editor-pane';
+            splitEl.style.cssText = `
+                flex: 1;
+                display: flex;
+                flex-direction: column;
+                background: #1e1e1e;
+                border-left: 1px solid #3e3e42;
+            `;
+
+            const splitTabs = document.createElement('div');
+            splitTabs.style.cssText = `
+                background: #252526;
+                border-bottom: 1px solid #3e3e42;
+                height: 35px;
+                display: flex;
+                padding-left: 8px;
+                overflow-x: auto;
+            `;
+            splitTabs.innerHTML = '<span style="color: #858585; padding: 8px; font-size: 12px;">Open a file to view here</span>';
+
+            const splitContent = document.createElement('div');
+            splitContent.id = 'split-ace-editor';
+            splitContent.style.cssText = `
+                flex: 1;
+                background: #1e1e1e;
+            `;
+
+            splitEl.appendChild(splitTabs);
+            splitEl.appendChild(splitContent);
+            container.appendChild(splitEl);
+
+            // Initialize split editor
+            splitEditors.split = ace.edit('split-ace-editor');
+            splitEditors.split.setTheme('ace/theme/monokai');
+            splitEditors.split.session.setOptions({ tabSize: 4, useSoftTabs: true });
+
+            splitMode = type;
+            addChatMessage('System', `✅ Split editor opened (${type})`, 'assistant');
+        }
+
+        function closeSplitEditor() {
+            const splitEl = document.getElementById('split-editor-pane');
+            if (splitEl) splitEl.remove();
+            const container = document.querySelector('.editor-container');
+            container.style.display = 'flex';
+            container.style.flexDirection = 'column';
+            document.querySelector('.editor-content').style.flex = '1';
+            splitMode = false;
+            if (splitEditors.split) {
+                splitEditors.split.destroy();
+                splitEditors.split = null;
+            }
+        }
+
+        // Open file in split editor
+        function openInSplit(path) {
+            if (!splitMode || !splitEditors.split) {
+                addChatMessage('System', '❌ Split editor not open', 'assistant');
+                return;
+            }
+            openFile(path, true); // pass true to indicate split
+        }
+
+        // ============= FILE TREE =============
+        async function loadFileTree() {
+            try {
+                const response = await fetch(`${API_URL}/list-files`);
+                const data = await response.json();
+                allFilesList = (data.files || []).map(f => f.name);
+                renderFileTree(data.files || []);
+            } catch (e) {
+                console.error('Failed to load file tree:', e);
+            }
+        }
+
+        function renderFileTree(fileList) {
+            const tree = document.getElementById('file-tree');
+            tree.innerHTML = '';
+
+            // Show empty state when no files
+            if (!fileList || fileList.length === 0) {
+                const emptyEl = document.createElement('div');
+                emptyEl.style.cssText = `
+                    padding: 16px;
+                    text-align: center;
+                    color: #858585;
+                    font-size: 12px;
+                    line-height: 1.6;
+                `;
+                emptyEl.innerHTML = `
+                    <div style="font-size: 20px; margin-bottom: 8px;">📁</div>
+                    <div><strong>No files loaded</strong></div>
+                    <div style="margin-top: 8px; font-size: 11px;">
+                        Use File menu to:<br>
+                        • Create new files<br>
+                        • Import/Upload folders
+                    </div>
+                `;
+                tree.appendChild(emptyEl);
+                return;
+            }
+
+            const rootFolder = { name: 'Project', isFolder: true, children: [] };
+
+            fileList.forEach(file => {
+                const parts = file.name.split('/');
+                let current = rootFolder;
+
+                for (let i = 0; i < parts.length - 1; i++) {
+                    let folder = current.children.find(c => c.name === parts[i] && c.isFolder);
+                    if (!folder) {
+                        folder = { name: parts[i], isFolder: true, children: [] };
+                        current.children.push(folder);
+                    }
+                    current = folder;
+                }
+
+                current.children.push({ name: parts[parts.length - 1], isFolder: false, path: file.name });
+            });
+
+            renderTreeNode(tree, rootFolder, 0);
+        }
+
+        function renderTreeNode(container, node, level) {
+            if (node.isFolder) {
+                const folderEl = document.createElement('div');
+                folderEl.className = 'folder-item';
+                folderEl.style.paddingLeft = (level * 12) + 'px';
+
+                const toggle = document.createElement('div');
+                toggle.className = 'folder-toggle expanded';
+                toggle.onclick = (e) => {
+                    e.stopPropagation();
+                    toggle.classList.toggle('expanded');
+                    toggle.classList.toggle('collapsed');
+                    contentsEl.classList.toggle('hidden');
+                };
+
+                const icon = document.createElement('div');
+                icon.className = 'file-icon';
+                icon.textContent = '📁';
+
+                const name = document.createElement('span');
+                name.textContent = node.name;
+
+                folderEl.appendChild(toggle);
+                folderEl.appendChild(icon);
+                folderEl.appendChild(name);
+
+                container.appendChild(folderEl);
+
+                const contentsEl = document.createElement('div');
+                contentsEl.className = 'folder-contents';
+                container.appendChild(contentsEl);
+
+                node.children.forEach(child => renderTreeNode(contentsEl, child, level + 1));
+            } else {
+                const fileEl = document.createElement('div');
+                fileEl.className = 'file-item';
+                fileEl.style.paddingLeft = (level * 12) + 'px';
+                fileEl.onclick = () => openFile(node.path);
+
+                const icon = document.createElement('div');
+                icon.className = 'file-icon';
+                icon.textContent = getFileIcon(node.path);
+
+                const name = document.createElement('span');
+                name.textContent = node.name;
+
+                fileEl.appendChild(icon);
+                fileEl.appendChild(name);
+
+                container.appendChild(fileEl);
+            }
+        }
+
+        function getFileIcon(filename) {
+            const icons = {
+                js: '⚙️', py: '🐍', java: '☕', cpp: '⚙️', cs: '#️⃣',
+                html: '🔖', css: '🎨', json: '{ }', xml: '📋', sql: '💾',
+                md: '📝', txt: '📄', yaml: '⚙️', sh: '🔧', git: '🌿'
+            };
+            const ext = filename.split('.').pop();
+            return icons[ext] || '📄';
+        }
+
+        // ============= FILE OPERATIONS =============
+        async function openFile(path, inSplit = false) {
+            try {
+                const response = await fetch(`${API_URL}/get-file`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ path })
+                });
+                if (!response.ok) throw new Error('File not found');
+                const data = await response.json();
+                const content = data.content;
+
+                if (inSplit && splitEditors.split) {
+                    // Open in split pane
+                    const ext = path.split('.').pop();
+                    const mode = languageModes[ext] || 'text';
+                    splitEditors.split.setValue(content, -1);
+                    splitEditors.split.session.setMode(`ace/mode/${mode}`);
+                    splitFile = path;
+                } else {
+                    // Open in main editor (tab)
+                    openInTab(path, content);
+                    currentFile = path;
+                }
+            } catch (e) {
+                console.error('Failed to open file:', e);
+            }
+        }
+
+        function openInTab(path, content) {
+            // Check if already open
+            if (activeTab && activeTab.path === path) return;
+
+            const existing = openTabs.find(t => t.path === path);
+            if (existing) {
+                switchTab(existing);
+                return;
+            }
+
+            const ext = path.split('.').pop();
+            const mode = languageModes[ext] || 'text';
+
+            const tab = { path, content, modified: false, mode };
+            openTabs.push(tab);
+            activeTab = tab;
+
+            renderTabs();
+            editor.setValue(content, -1);
+            editor.session.setMode(`ace/mode/${mode}`);
+
+            updateStatusBar();
+        }
+
+        function switchTab(tab) {
+            if (activeTab && activeTab.modified) {
+                // Auto-save or prompt
+            }
+
+            activeTab = tab;
+            editor.setValue(tab.content, -1);
+            editor.session.setMode(`ace/mode/${tab.mode}`);
+
+            renderTabs();
+            updateStatusBar();
+        }
+
+        function renderTabs() {
+            const tabBar = document.getElementById('tab-bar');
+            tabBar.innerHTML = '';
+
+            openTabs.forEach((tab, idx) => {
+                const tabEl = document.createElement('div');
+                tabEl.className = 'tab' + (tab === activeTab ? ' active' : '');
+
+                const icon = document.createElement('span');
+                icon.className = 'file-icon';
+                icon.textContent = getFileIcon(tab.path);
+
+                const name = document.createElement('span');
+                name.textContent = tab.path.split('/').pop() + (tab.modified ? ' ●' : '');
+
+                const closeBtn = document.createElement('div');
+                closeBtn.className = 'tab-close';
+                closeBtn.textContent = '×';
+                closeBtn.onclick = (e) => {
+                    e.stopPropagation();
+                    closeTab(tab);
+                };
+
+                tabEl.appendChild(icon);
+                tabEl.appendChild(name);
+                tabEl.appendChild(closeBtn);
+                tabEl.onclick = () => switchTab(tab);
+
+                tabBar.appendChild(tabEl);
+            });
+        }
+
+        function closeTab(tab) {
+            const idx = openTabs.indexOf(tab);
+            openTabs.splice(idx, 1);
+
+            if (activeTab === tab) {
+                activeTab = openTabs[idx] || openTabs[openTabs.length - 1] || null;
+                if (activeTab) switchTab(activeTab);
+                else editor.setValue('');
+            }
+
+            renderTabs();
+        }
+
+        // ============= EDITOR EVENTS =============
+        async function onEditorChange() {
+            if (!activeTab) return;
+
+            activeTab.modified = true;
+            activeTab.content = editor.getValue();
+
+            renderTabs();
+            updateStatusBar();
+
+            // Show save indicator
+            document.getElementById('file-status').classList.add('show');
+
+            // Autosave debounce
+            clearTimeout(window.autosaveTimer);
+            const autosaveEnabled = JSON.parse(localStorage.getItem('CODEFORGE_AUTOSAVE') || 'false');
+            if (autosaveEnabled) {
+                window.autosaveTimer = setTimeout(() => {
+                    saveCurrentFile();
+                }, 1500);
+            }
+
+            clearTimeout(window.saveTimeout);
+            window.saveTimeout = setTimeout(() => {
+                document.getElementById('file-status').classList.remove('show');
+            }, 3000);
+        }
+
+        function onCursorMove() {
+            const pos = editor.getCursorPosition();
+            const fileInfo = document.getElementById('file-info');
+            fileInfo.textContent = `${getLanguageLabel(activeTab?.mode)} | UTF-8 | LF`;
+
+            const cursorPos = document.getElementById('cursor-position');
+            cursorPos.textContent = `Ln ${pos.row + 1}, Col ${pos.column + 1}`;
+        }
+
+        function getLanguageLabel(mode) {
+            const labels = {
+                javascript: 'JavaScript', python: 'Python', java: 'Java',
+                cpp: 'C++', csharp: 'C#', html: 'HTML', css: 'CSS',
+                json: 'JSON', yaml: 'YAML', sql: 'SQL'
+            };
+            return labels[mode] || 'Text';
+        }
+
+        async function saveCurrentFile() {
+            if (!activeTab) return;
+
+            // Prevent overlapping saves
+            if (activeTab.saving) return;
+            activeTab.saving = true;
+
+            try {
+                // Ensure content is in sync
+                activeTab.content = editor.getValue();
+
+                const headers = { 'Content-Type': 'application/json' };
+                const token = localStorage.getItem('CODEFORGE_ADMIN_TOKEN');
+                if (token) headers['x-admin-token'] = token;
+
+                const response = await fetch(`${API_URL}/save-file`, {
+                    method: 'POST',
+                    headers,
+                    body: JSON.stringify({ path: activeTab.path, content: activeTab.content })
+                });
+
+                const data = await response.json();
+                if (data.ok) {
+                    activeTab.modified = false;
+                    activeTab.saving = false;
+                    renderTabs();
+                    addChatMessage('System', `✅ Saved ${activeTab.path}`, 'assistant');
+                } else {
+                    activeTab.saving = false;
+                    addChatMessage('System', `❌ Save failed: ${data.error}`, 'assistant');
+                }
+            } catch (e) {
+                console.error('Save error:', e);
+                activeTab.saving = false;
+                addChatMessage('System', `❌ Save error: ${e.message}`, 'assistant');
+            } finally {
+            }
+        }
+
+        // ============= IMPORT FOLDER & TERMINAL =============
+        function importFolderPrompt() {
+            const p = prompt('Enter absolute path of folder to import into project (requires admin token):');
+            if (!p) return;
+            importFolder(p);
+        }
+
+        async function importFolder(folderPath) {
+            try {
+                const headers = { 'Content-Type': 'application/json' };
+                const token = localStorage.getItem('CODEFORGE_ADMIN_TOKEN');
+                if (token) headers['x-admin-token'] = token;
+
+                const res = await fetch(`${API_URL}/import-folder`, {
+                    method: 'POST', headers, body: JSON.stringify({ folderPath })
+                });
+                const data = await res.json();
+                if (data.ok) {
+                    addChatMessage('System', `✅ Imported folder (${data.count} files)`, 'assistant');
+                    loadFileTree();
+                } else {
+                    addChatMessage('System', `❌ Import failed: ${data.error}`, 'assistant');
+                }
+            } catch (e) {
+                console.error('Import error', e);
+                addChatMessage('System', `❌ Import error: ${e.message}`, 'assistant');
+            }
+        }
+
+        function toggleTerminal() {
+            const t = document.getElementById('terminal-panel');
+            if (!t) return;
+            t.style.display = t.style.display === 'none' || t.style.display === '' ? 'flex' : 'none';
+        }
+
+        function toggleSidebar() {
+            const s = document.getElementById('sidebar');
+            if (!s) return;
+            s.style.display = s.style.display === 'none' || s.style.display === '' ? 'flex' : 'none';
+        }
+
+        // Import folder from local machine via folder input (uploads files)
+        function importFolderLocal() {
+            const input = document.getElementById('folderInput');
+            if (!input) return;
+            // Ensure admin token is set
+            const token = localStorage.getItem('CODEFORGE_ADMIN_TOKEN');
+            if (!token) {
+                addChatMessage('System', '🔒 Please set auth token before uploading. Click "Set Auth Token".', 'assistant');
+                return setAdminToken();
+            }
+
+            // Step 1: Ask user where to upload files
+            const targetFolder = prompt(
+                'Enter destination folder (e.g., "imports", "my_project", or leave blank for current folder):\n\nWARNING: Files will be uploaded to this folder. Leave blank to use project root (NOT recommended).',
+                'imports'
+            );
+            
+            if (targetFolder === null) return; // User cancelled
+            
+            if (!targetFolder.trim()) {
+                const confirmed = confirm(
+                    'WARNING: You are about to upload files to the PROJECT ROOT!\n\nThis can mix files with your CodeForge project files.\n\nAre you SURE you want to continue?'
+                );
+                if (!confirmed) return;
+            }
+
+            input.value = null;
+            input.onchange = (e) => {
+                const files = Array.from(e.target.files || []);
+                if (files.length === 0) return;
+
+                const form = new FormData();
+                form.append('targetFolder', targetFolder); // Send destination folder
+                for (const f of files) {
+                    const rel = f.webkitRelativePath || f.name;
+                    form.append('files', f, rel);
+                }
+
+                // Use XHR to get progress events and set header reliably
+                const xhr = new XMLHttpRequest();
+                xhr.open('POST', `${API_URL}/upload-folder`);
+                xhr.setRequestHeader('x-admin-token', token);
+
+                xhr.upload.onprogress = (ev) => {
+                    if (ev.lengthComputable) {
+                        const pct = Math.round((ev.loaded / ev.total) * 100);
+                        addChatMessage('System', `Uploading... ${pct}%`, 'assistant');
+                    }
+                };
+
+                xhr.onload = () => {
+                    try {
+                        const data = JSON.parse(xhr.responseText || '{}');
+                        if (data.ok) {
+                            addChatMessage('System', `✅ Uploaded ${data.count} files`, 'assistant');
+                            loadFileTree();
+                        } else {
+                            addChatMessage('System', `❌ Upload failed: ${data.error || xhr.statusText}`, 'assistant');
+                        }
+                    } catch (err) {
+                        addChatMessage('System', `❌ Upload parse error: ${err.message}`, 'assistant');
+                    }
+                };
+
+                xhr.onerror = () => addChatMessage('System', '❌ Upload error (network)', 'assistant');
+                xhr.send(form);
+            };
+            input.click();
+        }
+
+        async function deleteCurrentFile() {
+            if (!activeTab) return addChatMessage('System','No file selected','assistant');
+            const ok = confirm('Delete ' + activeTab.path + '? This cannot be undone.');
+            if (!ok) return;
+            try {
+                const headers = { 'Content-Type': 'application/json' };
+                const token = localStorage.getItem('CODEFORGE_ADMIN_TOKEN');
+                if (token) headers['x-admin-token'] = token;
+                const res = await fetch(`${API_URL}/delete-file`, { method: 'POST', headers, body: JSON.stringify({ path: activeTab.path }) });
+                const data = await res.json();
+                if (data.ok) {
+                    addChatMessage('System', `[OK] Deleted ${activeTab.path}`, 'assistant');
+                    closeTab(activeTab.id);
+                    loadFileTree();
+                } else {
+                    addChatMessage('System', `[ERROR] Delete failed: ${data.error}`, 'assistant');
+                }
+            } catch (e) {
+                addChatMessage('System', `[ERROR] Delete error: ${e.message}`, 'assistant');
+            }
+        }
+
+        async function runActiveFile() {
+            if (!activeTab) return addChatMessage('System','No file selected to run','assistant');
+            const path = activeTab.path;
+            let cmd = '';
+            if (path.endsWith('.py')) cmd = `python "${path}"`;
+            else if (path.endsWith('.js')) cmd = `node "${path}"`;
+            else return addChatMessage('System','Run is only supported for .py and .js files','assistant');
+            try {
+                const headers = { 'Content-Type': 'application/json' };
+                const token = localStorage.getItem('CODEFORGE_ADMIN_TOKEN');
+                if (token) headers['x-admin-token'] = token;
+                const res = await fetch(`${API_URL}/exec`, { method: 'POST', headers, body: JSON.stringify({ cmd }) });
+                const data = await res.json();
+                if (data.stdout) addTerminalOutput(data.stdout);
+                if (data.stderr) addTerminalOutput(data.stderr, true);
+                addChatMessage('System', `[OK] Executed: ${cmd}`, 'assistant');
+            } catch (e) {
+                addChatMessage('System', `[ERROR] Run error: ${e.message}`, 'assistant');
+            }
+        }
+
+        async function runProject() {
+            addChatMessage('System', 'Run Project: starting backend (if not already running)', 'assistant');
+            try {
+                const headers = { 'Content-Type': 'application/json' };
+                const token = localStorage.getItem('CODEFORGE_ADMIN_TOKEN');
+                if (token) headers['x-admin-token'] = token;
+                const res = await fetch(`${API_URL}/exec`, { method: 'POST', headers, body: JSON.stringify({ cmd: 'node codeforge_studio_server.js' }) });
+                const data = await res.json();
+                addChatMessage('System', `[OK] Project run requested`, 'assistant');
+            } catch (e) {
+                addChatMessage('System', `[ERROR] Run project error: ${e.message}`, 'assistant');
+            }
+        }
+
+        function clearTerminal() {
+            const out = document.getElementById('terminal-output');
+            if (out) out.innerHTML = '';
+        }
+
+        async function runTerminalCommand() {
+            const cmdInput = document.getElementById('terminal-cmd');
+            const out = document.getElementById('terminal-output');
+            if (!cmdInput || !out) return;
+            const cmd = cmdInput.value.trim();
+            if (!cmd) return;
+            out.innerHTML += `<div style="color:#9a9a9a;">$ ${cmd}</div>`;
+            try {
+                const headers = { 'Content-Type': 'application/json' };
+                const token = localStorage.getItem('CODEFORGE_ADMIN_TOKEN');
+                if (token) headers['x-admin-token'] = token;
+
+                const res = await fetch(`${API_URL}/exec`, { method: 'POST', headers, body: JSON.stringify({ cmd }) });
+                const data = await res.json();
+                if (data.stdout) out.innerHTML += `<pre style="color:#d4d4d4;">${escapeHtml(data.stdout)}</pre>`;
+                if (data.stderr) out.innerHTML += `<pre style="color:#f88;">${escapeHtml(data.stderr)}</pre>`;
+            } catch (e) {
+                out.innerHTML += `<div style="color:#f88;">Exec error: ${e.message}</div>`;
+            }
+            out.scrollTop = out.scrollHeight;
+        }
+
+        function escapeHtml(s) {
+            return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        }
+
+        function updateStatusBar() {
+            if (activeTab) {
+                const info = document.getElementById('file-info');
+                info.textContent = `${getLanguageLabel(activeTab.mode)} | UTF-8 | LF`;
+            }
+        }
+
+        // ============= CHAT FUNCTIONS =============
+        function setChatMode(mode, btnEl) {
+            chatMode = mode;
+            document.querySelectorAll('.chat-mode-btn').forEach(b => b.classList.remove('active'));
+            if (btnEl) btnEl.classList.add('active');
+        }
+
+        async function sendChatMessage() {
+            const input = document.getElementById('chat-input');
+            const message = input.value.trim();
+            if (!message) return;
+
+            addChatMessage('You', message, 'user');
+            input.value = '';
+
+            const sendBtn = document.getElementById('chat-send-btn');
+            sendBtn.disabled = true;
+
+            // Create assistant message placeholder
+            addChatMessage('Assistant', '...', 'assistant');
+
+            // Build context from current file
+            let context = '';
+            if (activeTab) {
+                context = `\n\nCURRENT FILE: ${activeTab.path}\n\`\`\`\n${activeTab.content}\n\`\`\``;
+            }
+
+            const prompt = `[MODE: ${chatMode}]\n\nUser: ${message}${context}\n\nAssistant:`;
+
+            // Fast mode reduces n_predict and timeout
+            const fast = document.getElementById('fast-ai-toggle') && document.getElementById('fast-ai-toggle').checked;
+            const n_predict = chatMode === 'code' ? 12000 : (fast ? 400 : 2000);
+            const temperature = chatMode === 'code' ? 0.2 : (fast ? 0.6 : 0.7);
+            const timeoutMs = fast ? 20_000 : 120_000;
+
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+            try {
+                const response = await fetch(`${API_URL}/stream`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ prompt, n_predict, temperature }),
+                    signal: controller.signal
+                });
+
+                if (!response.ok) throw new Error('Stream failed');
+
+                let assistantMessage = '';
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    const text = decoder.decode(value, { stream: true });
+                    const lines = text.split('\n');
+
+                    for (const line of lines) {
+                        if (line.startsWith('data:')) {
+                            const payload = line.substring(line.indexOf('{'));
+                            try {
+                                const json = JSON.parse(payload);
+                                if (json.content) {
+                                    assistantMessage += json.content;
+                                    updateLastChatMessage(assistantMessage);
+                                }
+                            } catch (e) { /* ignore malformed chunks */ }
+                        }
+                    }
+                }
+
+                parseChatPatches(assistantMessage);
+            } catch (e) {
+                if (e.name === 'AbortError') {
+                    addChatMessage('System', '⚠️ AI response timed out (try Fast mode or increase timeout)', 'assistant');
+                } else {
+                    console.error('Chat error:', e);
+                    addChatMessage('System', `Error: ${e.message}`, 'assistant');
+                }
+            } finally {
+                clearTimeout(timeout);
+                sendBtn.disabled = false;
+            }
+        }
+
+        function addChatMessage(sender, content, role) {
+            const messagesEl = document.getElementById('chat-messages');
+
+            const msgEl = document.createElement('div');
+            msgEl.className = 'message ' + role;
+            msgEl.id = 'chat-msg-' + Date.now();
+
+            const contentEl = document.createElement('div');
+            contentEl.className = 'message-content';
+
+            if (role === 'assistant') {
+                contentEl.innerHTML = marked.parse(content);
+            } else {
+                contentEl.textContent = content;
+            }
+
+            msgEl.appendChild(contentEl);
+            messagesEl.appendChild(msgEl);
+            messagesEl.scrollTop = messagesEl.scrollHeight;
+
+            return msgEl.id;
+        }
+
+        function updateLastChatMessage(content) {
+            const messages = document.getElementById('chat-messages');
+            const lastMsg = messages.lastElementChild;
+
+            if (lastMsg && lastMsg.classList.contains('assistant')) {
+                const contentEl = lastMsg.querySelector('.message-content');
+                contentEl.innerHTML = marked.parse(content);
+
+                // Highlight code blocks
+                contentEl.querySelectorAll('pre code').forEach(block => {
+                    hljs.highlightElement(block);
+                });
+            }
+        }
+
+            // ============= MENU INTERACTIONS =============
+            function setupMenuInteractions() {
+                // Toggle menu dropdowns
+                document.querySelectorAll('#menu-bar .menu').forEach(menu => {
+                    const title = menu.querySelector('.menu-title');
+                    const items = menu.querySelector('.menu-items');
+                    if (!title || !items) return;
+                    title.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        // close others
+                        document.querySelectorAll('#menu-bar .menu-items').forEach(mi => {
+                            if (mi !== items) mi.classList.add('hidden');
+                        });
+                        items.classList.toggle('hidden');
+                    });
+                });
+
+                // Close menus when clicking outside
+                document.addEventListener('click', (e) => {
+                    document.querySelectorAll('#menu-bar .menu-items').forEach(mi => mi.classList.add('hidden'));
+                });
+            }
+
+        function parseChatPatches(content) {
+            // Look for file patches in format: File: "path"\n```\ncode\n```
+            const filePattern = /File:\s*"?([^"]+)"?\n/g;
+            let match;
+
+            while ((match = filePattern.exec(content)) !== null) {
+                const path = match[1];
+                // Find code block after file declaration
+                const codePattern = /```[\w]*\n([\s\S]*?)\n```/;
+                const codeMatch = content.substring(match.index).match(codePattern);
+
+                if (codeMatch) {
+                    const code = codeMatch[1];
+                    // Show apply button in chat
+                    setTimeout(() => {
+                        const lastMsg = document.getElementById('chat-messages').lastElementChild;
+                        if (lastMsg && !lastMsg.querySelector('.patch-apply-btn')) {
+                            const btn = document.createElement('button');
+                            btn.className = 'patch-apply-btn';
+                            btn.textContent = `✏️ Apply patch: ${path}`;
+                            btn.style.cssText = `
+                                background: #007acc;
+                                color: white;
+                                border: none;
+                                padding: 6px 12px;
+                                border-radius: 3px;
+                                cursor: pointer;
+                                font-size: 11px;
+                                margin-top: 8px;
+                            `;
+                            btn.onclick = () => applyPatchFromChat(path, code);
+                            lastMsg.appendChild(btn);
+                        }
+                    }, 100);
+                }
+            }
+        }
+
+        async function applyPatchFromChat(path, content) {
+            try {
+                const headers = { 'Content-Type': 'application/json' };
+                if (adminToken) headers['x-admin-token'] = adminToken;
+
+                const response = await fetch(`${API_URL}/save-file`, {
+                    method: 'POST',
+                    headers,
+                    body: JSON.stringify({ path, content })
+                });
+
+                const data = await response.json();
+                if (data.ok) {
+                    addChatMessage('System', `✅ Applied patch to ${path}`, 'assistant');
+                    loadFileTree();
+                    openFile(path);
+                } else {
+                    addChatMessage('System', `❌ Patch failed: ${data.error}`, 'assistant');
+                }
+            } catch (e) {
+                console.error('Apply patch error:', e);
+                addChatMessage('System', `❌ Error: ${e.message}`, 'assistant');
+            }
+        }
+
+        // ============= ADMIN TOKEN =============
+        function setAdminToken() {
+            const token = prompt('Enter admin token (saved locally):');
+            if (token) {
+                adminToken = token;
+                localStorage.setItem('CODEFORGE_ADMIN_TOKEN', token);
+                updateAdminTokenDisplay();
+                addChatMessage('System', '✅ Admin token set', 'assistant');
+            }
+        }
+
+        function clearAdminToken() {
+            adminToken = '';
+            localStorage.removeItem('CODEFORGE_ADMIN_TOKEN');
+            updateAdminTokenDisplay();
+            addChatMessage('System', '🔓 Admin token cleared', 'assistant');
+        }
+
+        function updateAdminTokenDisplay() {
+            const el = document.getElementById('admin-token-status');
+            if (adminToken) {
+                el.textContent = '🔐 Authenticated';
+                el.style.color = '#89d185';
+            } else {
+                el.textContent = '🔓 No auth token';
+                el.style.color = '#858585';
+            }
+        }
+
+        // ============= GIT / SOURCE CONTROL =============
+        function showPanel(panelName, btnEl) {
+            document.querySelectorAll('.sidebar-section').forEach(s => s.classList.add('hidden'));
+            document.querySelectorAll('.activity-icon').forEach(i => i.classList.remove('active'));
+
+            if (panelName === 'explorer') {
+                document.getElementById('explorer-panel').classList.remove('hidden');
+            } else if (panelName === 'git') {
+                document.getElementById('git-panel').classList.remove('hidden');
+                loadGitChanges();
+            } else if (panelName === 'search') {
+                document.getElementById('search-panel').classList.remove('hidden');
+            } else if (panelName === 'extensions') {
+                document.getElementById('extensions-panel').classList.remove('hidden');
+            } else if (panelName === 'deps') {
+                document.getElementById('deps-panel').classList.remove('hidden');
+            }
+
+            if (btnEl) btnEl.classList.add('active');
+        }
+
+        async function loadGitChanges() {
+            // Simulate git changes (in production, fetch from backend)
+            const changesEl = document.getElementById('git-changes');
+            changesEl.innerHTML = `
+                <div class="sc-change-item">
+                    <div class="sc-status modified">✎</div>
+                    <span>main.js</span>
+                </div>
+                <div class="sc-change-item">
+                    <div class="sc-status added">+</div>
+                    <span>utils.py</span>
+                </div>
+            `;
+        }
+
+        async function commitChanges() {
+            const message = document.getElementById('git-message').value.trim();
+            if (!message) {
+                alert('Enter a commit message');
+                return;
+            }
+
+            try {
+                const headers = { 'Content-Type': 'application/json' };
+                if (adminToken) headers['x-admin-token'] = adminToken;
+
+                const response = await fetch(`${API_URL}/git-commit`, {
+                    method: 'POST',
+                    headers,
+                    body: JSON.stringify({ message })
+                });
+
+                const data = await response.json();
+                addChatMessage('System', `✅ Committed: ${message}`, 'assistant');
+                document.getElementById('git-message').value = '';
+            } catch (e) {
+                console.error('Commit error:', e);
+                addChatMessage('System', `❌ Commit failed: ${e.message}`, 'assistant');
+            }
+        }
+
+        function showGitShare() {
+            document.getElementById('git-share-modal').classList.add('show');
+        }
+
+        async function performGitShare() {
+            const path = document.getElementById('share-path').value.trim();
+            if (!path) {
+                alert('Enter partner folder path');
+                return;
+            }
+
+            try {
+                const headers = { 'Content-Type': 'application/json' };
+                if (adminToken) headers['x-admin-token'] = adminToken;
+
+                const response = await fetch(`${API_URL}/sync`, {
+                    method: 'POST',
+                    headers,
+                    body: JSON.stringify({ partnerPath: path })
+                });
+
+                const data = await response.json();
+                addChatMessage('System', `✅ Synced to ${path}`, 'assistant');
+                closeModal('git-share-modal');
+            } catch (e) {
+                console.error('Sync error:', e);
+                addChatMessage('System', `❌ Sync failed: ${e.message}`, 'assistant');
+            }
+        }
+
+        // ============= UI HELPERS =============
+        function setupChatInput() {
+            const input = document.getElementById('chat-input');
+            const messagesEl = document.getElementById('chat-messages');
+            
+            // Show welcome message if empty
+            if (messagesEl.children.length === 0) {
+                addChatMessage('CodeForge AI', 
+                    '👋 Welcome to CodeForge AI!\n\n' +
+                    '**Features:**\n' +
+                    '- 💬 Chat: Ask questions about your code\n' +
+                    '- 📝 Code: Generate code snippets\n' +
+                    '- 🔧 Refactor: Improve existing code\n' +
+                    '- 💡 Explain: Understand code better\n\n' +
+                    '**Quick Start:**\n' +
+                    '1. Set your auth token above\n' +
+                    '2. Open a file or ask a question\n' +
+                    '3. Press Ctrl+Enter or click ⬆ to send\n\n' +
+                    'Try asking: "Help me with JavaScript" or "Refactor this function"',
+                    'assistant'
+                );
+            }
+            
+            input.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' && e.ctrlKey) {
+                    e.preventDefault();
+                    sendChatMessage();
+                }
+            });
+        }
+
+        async function newFile() {
+            const name = prompt('New file path (e.g. src/newfile.js):');
+            if (!name) return;
+            try {
+                const headers = { 'Content-Type': 'application/json' };
+                const token = localStorage.getItem('CODEFORGE_ADMIN_TOKEN');
+                if (token) headers['x-admin-token'] = token;
+
+                const response = await fetch(`${API_URL}/create-file`, {
+                    method: 'POST', headers, body: JSON.stringify({ path: name, content: '' })
+                });
+                const data = await response.json();
+                if (data.ok) {
+                    addChatMessage('System', `✅ Created file: ${name}`, 'assistant');
+                    loadFileTree();
+                    openFile(name);
+                } else {
+                    addChatMessage('System', `❌ Create failed: ${data.error}`, 'assistant');
+                }
+            } catch (e) {
+                console.error('Create file error', e);
+                addChatMessage('System', `❌ Error: ${e.message}`, 'assistant');
+            }
+        }
+
+        async function newFolder() {
+            const name = prompt('New folder path (e.g. src/components):');
+            if (!name) return;
+            try {
+                const headers = { 'Content-Type': 'application/json' };
+                const token = localStorage.getItem('CODEFORGE_ADMIN_TOKEN');
+                if (token) headers['x-admin-token'] = token;
+
+                const response = await fetch(`${API_URL}/create-folder`, {
+                    method: 'POST', headers, body: JSON.stringify({ path: name })
+                });
+                const data = await response.json();
+                if (data.ok) {
+                    addChatMessage('System', `✅ Created folder: ${name}`, 'assistant');
+                    loadFileTree();
+                } else {
+                    addChatMessage('System', `❌ Create folder failed: ${data.error}`, 'assistant');
+                }
+            } catch (e) {
+                console.error('Create folder error', e);
+                addChatMessage('System', `❌ Error: ${e.message}`, 'assistant');
+            }
+        }
+
+        // ============= DEPENDENCY MANAGER =============
+        async function checkDeps() {
+            try {
+                const response = await fetch(`${API_URL}/check-deps`);
+                const data = await response.json();
+                renderDeps(data);
+                showPanel('deps');
+            } catch (e) {
+                console.error('Deps check failed', e);
+                addChatMessage('System', `❌ Dependency check failed: ${e.message}`, 'assistant');
+            }
+        }
+
+        function renderDeps(data) {
+            const el = document.getElementById('deps-content');
+            if (!el) return;
+            el.innerHTML = '';
+
+            if (!data || (!data.npm && !data.pip)) {
+                el.textContent = 'No dependency files detected (package.json or requirements.txt)';
+                return;
+            }
+
+            if (data.npm && data.npm.length) {
+                const h = document.createElement('div');
+                h.style.marginBottom = '6px';
+                h.style.fontWeight = '600';
+                h.textContent = 'npm dependencies';
+                el.appendChild(h);
+
+                data.npm.forEach(d => {
+                    const row = document.createElement('div');
+                    row.style.display = 'flex';
+                    row.style.justifyContent = 'space-between';
+                    row.style.gap = '12px';
+                    row.style.marginBottom = '6px';
+
+                    const left = document.createElement('div');
+                    left.textContent = d.name + ' @ ' + d.current;
+
+                    const right = document.createElement('div');
+                    right.textContent = d.latest ? `Latest: ${d.latest}` : '—';
+                    right.style.color = d.outdated ? '#f0ad4e' : '#89d185';
+
+                    row.appendChild(left);
+                    row.appendChild(right);
+                    el.appendChild(row);
+                });
+            }
+
+            if (data.pip && data.pip.length) {
+                const h2 = document.createElement('div');
+                h2.style.marginTop = '8px';
+                h2.style.marginBottom = '6px';
+                h2.style.fontWeight = '600';
+                h2.textContent = 'Python requirements';
+                el.appendChild(h2);
+
+                data.pip.forEach(d => {
+                    const row = document.createElement('div');
+                    row.style.display = 'flex';
+                    row.style.justifyContent = 'space-between';
+                    row.style.gap = '12px';
+                    row.style.marginBottom = '6px';
+
+                    const left = document.createElement('div');
+                    left.textContent = d.name + ' == ' + d.current;
+
+                    const right = document.createElement('div');
+                    right.textContent = d.latest ? `Latest: ${d.latest}` : '—';
+                    right.style.color = d.outdated ? '#f0ad4e' : '#89d185';
+
+                    row.appendChild(left);
+                    row.appendChild(right);
+                    el.appendChild(row);
+                });
+            }
+        }
+
+        // ============= BREADCRUMB & NAVIGATION =============
+        function renderBreadcrumb(path) {
+            const parts = path.split('/');
+            let html = '<span style="color:#858585; font-size:11px; margin-left:8px;">';
+            for (let i = 0; i < parts.length; i++) {
+                const click = `onclick="openFile('${parts.slice(0,i+1).join('/')}')"`;
+                html += `<span style="cursor:pointer; color:#d4d4d4;">${parts[i]}</span>`;
+                if (i < parts.length - 1) html += '<span style="color:#858585; margin:0 4px;">›</span>';
+            }
+            html += '</span>';
+            return html;
+        }
+
+        // ============= IMPROVED GIT UI =============
+        async function loadGitChanges() {
+            try {
+                const headers = { 'Content-Type': 'application/json' };
+                const token = localStorage.getItem('CODEFORGE_ADMIN_TOKEN');
+                if (token) headers['x-admin-token'] = token;
+
+                const response = await fetch(`${API_URL}/git-status`, { headers });
+                const data = await response.json();
+                const changesEl = document.getElementById('git-changes');
+
+                if (!data.changes || data.changes.length === 0) {
+                    changesEl.innerHTML = '<div style="color:#858585; font-size:12px; padding:8px;">No changes</div>';
+                    return;
+                }
+
+                changesEl.innerHTML = '';
+                data.changes.forEach(change => {
+                    const item = document.createElement('div');
+                    item.className = 'sc-change-item';
+                    item.style.cursor = 'pointer';
+                    item.onclick = () => showFileDiff(change.file);
+
+                    const status = document.createElement('div');
+                    status.className = 'sc-status ' + (change.status === 'M' ? 'modified' : change.status === 'A' ? 'added' : 'deleted');
+                    status.textContent = change.status === 'M' ? '✎' : change.status === 'A' ? '+' : '−';
+
+                    const file = document.createElement('span');
+                    file.textContent = change.file;
+
+                    item.appendChild(status);
+                    item.appendChild(file);
+                    changesEl.appendChild(item);
+                });
+            } catch (e) {
+                console.error('Git status error:', e);
+            }
+        }
+
+        async function showFileDiff(filePath) {
+            try {
+                const headers = { 'Content-Type': 'application/json' };
+                const token = localStorage.getItem('CODEFORGE_ADMIN_TOKEN');
+                if (token) headers['x-admin-token'] = token;
+
+                const response = await fetch(`${API_URL}/get-file`, {
+                    method: 'POST',
+                    headers,
+                    body: JSON.stringify({ path: filePath })
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    addChatMessage('System', `📄 File: ${filePath}\n\`\`\`\n${data.content.substring(0, 500)}...\n\`\`\``, 'assistant');
+                    openFile(filePath);
+                }
+            } catch (e) {
+                addChatMessage('System', `❌ Failed to show diff: ${e.message}`, 'assistant');
+            }
+        }
+
+        // ============= EXTENSIONS MARKETPLACE =============
+        function showExtensionsMarketplace() {
+            showPanel('extensions');
+            const content = document.getElementById('extensions-panel').querySelector('.sidebar-content');
+            if (content.innerHTML.length < 100) {
+                content.innerHTML = `
+                    <div style="padding: 12px; font-size: 12px; color: #d4d4d4;">
+                        <div style="margin-bottom: 12px;">
+                            <input type="text" placeholder="Search extensions..." style="width: 100%; padding: 6px; background: #3e3e42; border: 1px solid #555555; color: #d4d4d4; border-radius: 3px; margin-bottom: 12px;">
+                        </div>
+                        <div style="border-bottom: 1px solid #3e3e42; padding-bottom: 12px; margin-bottom: 12px;">
+                            <div style="font-weight: 600; margin-bottom: 8px;">Featured</div>
+                            <div style="padding: 6px; background: #2d2d30; border-radius: 3px; margin-bottom: 6px;">
+                                <div style="font-weight: 500;">Pylance (Python)</div>
+                                <div style="color: #858585; font-size: 11px;">IntelliSense for Python</div>
+                                <button onclick="installExtension('pylance')" style="margin-top: 4px; padding: 4px 8px; background: #007acc; border: none; color: white; border-radius: 2px; cursor: pointer; font-size: 11px;">Install</button>
+                            </div>
+                            <div style="padding: 6px; background: #2d2d30; border-radius: 3px; margin-bottom: 6px;">
+                                <div style="font-weight: 500;">ESLint</div>
+                                <div style="color: #858585; font-size: 11px;">JavaScript linting</div>
+                                <button onclick="installExtension('eslint')" style="margin-top: 4px; padding: 4px 8px; background: #007acc; border: none; color: white; border-radius: 2px; cursor: pointer; font-size: 11px;">Install</button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+        }
+
+        function installExtension(name) {
+            addChatMessage('System', `✅ Extension "${name}" installed (simulation)`, 'assistant');
+        }
+
+        // ============= TERMINAL IMPROVEMENTS =============
+        function addTerminalOutput(text, isError = false) {
+            const out = document.getElementById('terminal-output');
+            if (!out) return;
+            const line = document.createElement('div');
+            line.style.color = isError ? '#f88' : '#d4d4d4';
+            line.textContent = text;
+            out.appendChild(line);
+            out.scrollTop = out.scrollHeight;
+        }
+
+        function closeModal(modalId) {
+            document.getElementById(modalId).classList.remove('show');
+        }
+
+        function toggleLineNumbers() {
+            editor.session.setOption('showLineNumbers', !editor.session.getOption('showLineNumbers'));
+        }
+
+        // ============= STARTUP =============
+        window.addEventListener('load', init);
+
+        console.log('🚀 CodeForge Studio - VS Code Clone with AI');
+    </script>
+</body>
+
+</html>
