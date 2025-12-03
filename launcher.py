@@ -4,16 +4,69 @@ CodeForge Studio - Windows Desktop Application
 FIXED: Prevents infinite loops, proper cleanup, kill switch
 """
 
-import opython start_codeforge.pys
 import sys
 import time
 import webbrowser
 import socket
 import subprocess
 import atexit
-import psutil
 import signal
 import threading
+import os
+
+# `psutil` is required at runtime. Try to import early but allow
+# the script to attempt an automatic install later in `__main__`.
+try:
+    import psutil
+except ImportError:
+    psutil = None
+
+# Provide safe aliases for psutil exception types so `except (..)` tuples
+# don't attempt to access attributes on `None` (which would raise while
+# handling another exception). When psutil is missing we alias to
+# `Exception` so the except block still catches runtime errors.
+if psutil is None:
+    PSUTIL_NoSuchProcess = Exception
+    PSUTIL_AccessDenied = Exception
+    PSUTIL_ZombieProcess = Exception
+else:
+    PSUTIL_NoSuchProcess = psutil.NoSuchProcess
+    PSUTIL_AccessDenied = psutil.AccessDenied
+    # Some psutil versions export ZombieProcess; fallback if missing
+    PSUTIL_ZombieProcess = getattr(psutil, 'ZombieProcess', Exception)
+
+def ensure_psutil():
+    """Ensure `psutil` is importable. If missing, attempt to install it.
+
+    This updates the global `psutil` and PSUTIL_* aliases.
+    """
+    global psutil, PSUTIL_NoSuchProcess, PSUTIL_AccessDenied, PSUTIL_ZombieProcess
+
+    if psutil is not None:
+        return
+
+    try:
+        import psutil as _p
+        psutil = _p
+    except Exception:
+        try:
+            print_log("psutil not found — attempting to install via pip")
+            subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'psutil'])
+            import importlib
+            psutil = importlib.import_module('psutil')
+        except Exception as e:
+            log(f"Could not install/import psutil: {e}")
+            psutil = None
+
+    # Update aliases
+    if psutil is None:
+        PSUTIL_NoSuchProcess = Exception
+        PSUTIL_AccessDenied = Exception
+        PSUTIL_ZombieProcess = Exception
+    else:
+        PSUTIL_NoSuchProcess = psutil.NoSuchProcess
+        PSUTIL_AccessDenied = psutil.AccessDenied
+        PSUTIL_ZombieProcess = getattr(psutil, 'ZombieProcess', Exception)
 
 # ============= CONFIGURATION =============
 LLAMA_PORT = 8000
@@ -63,32 +116,38 @@ def force_shutdown():
     
     print_log("[WARN] FORCE SHUTDOWN INITIATED")
     
-    # Kill all Python processes named llama
-    try:
-        for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
-            try:
-                if 'llama' in proc.name().lower() or \
-                   (proc.cmdline() and any('llama' in str(cmd).lower() for cmd in proc.cmdline())):
-                    print_log(f"Killing llama process: {proc.pid}")
-                    proc.kill()
-            except (psutil.NoSuchProcess, psutil.AccessDenied):
-                pass
-    except Exception as e:
-        log(f"Error killing llama processes: {e}")
+    # Kill all Python processes named llama (if psutil available)
+    if psutil is None:
+        log("psutil not available: skipping process-kill for llama")
+    else:
+        try:
+            for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
+                try:
+                    if 'llama' in proc.name().lower() or \
+                       (proc.cmdline() and any('llama' in str(cmd).lower() for cmd in proc.cmdline())):
+                        print_log(f"Killing llama process: {proc.pid}")
+                        proc.kill()
+                except (PSUTIL_NoSuchProcess, PSUTIL_AccessDenied):
+                    pass
+        except Exception as e:
+            log(f"Error killing llama processes: {e}")
     
     # Kill all node processes on our port
-    try:
-        for proc in psutil.process_iter(['pid', 'name', 'connections']):
-            try:
-                if proc.name().lower() in ['node.exe', 'node']:
-                    for conn in proc.connections():
-                        if conn.laddr.port == NODE_PORT:
-                            print_log(f"Killing node process: {proc.pid}")
-                            proc.kill()
-            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
-                pass
-    except Exception as e:
-        log(f"Error killing node processes: {e}")
+    if psutil is None:
+        log("psutil not available: skipping process-kill for node")
+    else:
+        try:
+            for proc in psutil.process_iter(['pid', 'name', 'connections']):
+                try:
+                    if proc.name().lower() in ['node.exe', 'node']:
+                        for conn in proc.connections():
+                            if conn.laddr.port == NODE_PORT:
+                                print_log(f"Killing node process: {proc.pid}")
+                                proc.kill()
+                except (PSUTIL_NoSuchProcess, PSUTIL_AccessDenied, PSUTIL_ZombieProcess):
+                    pass
+        except Exception as e:
+            log(f"Error killing node processes: {e}")
     
     # Remove lock files
     remove_lock()
@@ -107,24 +166,38 @@ def check_single_instance():
             with open(LOCK_FILE, 'r') as f:
                 old_pid = int(f.read().strip())
             
-            # Check if process still exists
+            # Check if process still exists (best-effort with psutil)
             try:
-                process = psutil.Process(old_pid)
-                if process.is_running():
-                    # Check how old the lock file is
+                if psutil is None:
+                    # Fallback: if lock file is recent, assume running; otherwise remove
                     lock_age = time.time() - os.path.getmtime(LOCK_FILE)
                     if lock_age > 300:  # 5 minutes
                         print_log(f"[WARN] Stale lock file detected (age: {lock_age:.0f}s)")
                         print_log("Removing stale lock and continuing...")
                         os.remove(LOCK_FILE)
                     else:
-                        print_log(f"Another instance is running (PID: {old_pid})")
-                        # Non-interactive exit
+                        print_log(f"Lock file present (PID: {old_pid}) — psutil not installed to verify process")
                         sys.exit(0)
-            except psutil.NoSuchProcess:
-                # Old process is dead, remove stale lock
-                os.remove(LOCK_FILE)
-                log("Removed stale lock file (process dead)")
+                else:
+                    process = psutil.Process(old_pid)
+                    if process.is_running():
+                        # Check how old the lock file is
+                        lock_age = time.time() - os.path.getmtime(LOCK_FILE)
+                        if lock_age > 300:  # 5 minutes
+                            print_log(f"[WARN] Stale lock file detected (age: {lock_age:.0f}s)")
+                            print_log("Removing stale lock and continuing...")
+                            os.remove(LOCK_FILE)
+                        else:
+                            print_log(f"Another instance is running (PID: {old_pid})")
+                            # Non-interactive exit
+                            sys.exit(0)
+            except Exception as e:
+                # If psutil raised NoSuchProcess or other errors, remove stale lock
+                try:
+                    os.remove(LOCK_FILE)
+                except:
+                    pass
+                log("Removed stale lock file (process dead or unknown error)")
         except Exception as e:
             log(f"Lock check error: {e}")
             # Remove corrupted lock file
@@ -161,6 +234,10 @@ def is_port_in_use(port):
 def kill_process_on_port(port):
     """Kill any process using the specified port"""
     killed = False
+    if psutil is None:
+        log(f"psutil not available: cannot kill processes on port {port}")
+        return False
+
     try:
         for proc in psutil.process_iter(['pid', 'name', 'connections']):
             try:
@@ -170,7 +247,7 @@ def kill_process_on_port(port):
                         proc.kill()
                         proc.wait(timeout=3)
                         killed = True
-            except (psutil.AccessDenied, psutil.NoSuchProcess, psutil.ZombieProcess):
+            except (PSUTIL_AccessDenied, PSUTIL_NoSuchProcess, PSUTIL_ZombieProcess):
                 continue
             except Exception as e:
                 log(f"Error killing process: {e}")
@@ -293,7 +370,6 @@ def start_llama_server():
         if sys.platform == 'win32':
             startupinfo = subprocess.STARTUPINFO()
             startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-            startupinfo.wShowWindow = subprocess.SW_HIDE
         
         llama_process = subprocess.Popen(
             cmd,
@@ -346,7 +422,6 @@ def start_node_server():
         if sys.platform == 'win32':
             startupinfo = subprocess.STARTUPINFO()
             startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-            startupinfo.wShowWindow = subprocess.SW_HIDE
         
         node_process = subprocess.Popen(
             cmd,
@@ -442,6 +517,8 @@ def main():
     
     try:
         # Check for existing instance
+        # Ensure psutil available (try to auto-install if missing)
+        ensure_psutil()
         check_single_instance()
         
         # Start services
@@ -504,12 +581,4 @@ def main():
         sys.exit(0)
 
 if __name__ == '__main__':
-    # Ensure psutil is available
-    try:
-        import psutil
-    except ImportError:
-        print("Installing required dependency: psutil")
-        subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'psutil'])
-        import psutil
-    
     main()
