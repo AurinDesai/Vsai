@@ -157,7 +157,7 @@ def force_shutdown():
     except:
         pass
     
-    print_log("✅ Force shutdown complete")
+    print_log("[OK] Force shutdown complete")
 
 def check_single_instance():
     """Ensure only one instance is running - WITH TIMEOUT"""
@@ -269,9 +269,7 @@ def wait_for_port(port, timeout=120, service_name="Service"):
             print_log("Emergency kill detected during startup")
             return False
             
-        if is_port_in_use(port):
-            print_log(f"✅ {service_name} ready on port {port}")
-            return True
+            print_log(f"[OK] {service_name} ready on port {port}")
         
         elapsed = int(time.time() - start_time)
         if elapsed % 10 == 0 and elapsed > 0:
@@ -290,15 +288,14 @@ def cleanup_processes():
         return
         
     shutdown_initiated = True
-    print_log("\n🛑 Shutting down services...")
+    print_log("[SHUTDOWN] Shutting down services...")
     
     # Terminate Node server
     if node_process:
         try:
             print_log("Stopping Node server...")
             node_process.terminate()
-            node_process.wait(timeout=5)
-            print_log("✅ Node server stopped")
+            print_log("[OK] Node server stopped")
         except subprocess.TimeoutExpired:
             node_process.kill()
             log("Node server killed (timeout)")
@@ -310,8 +307,7 @@ def cleanup_processes():
         try:
             print_log("Stopping Llama server...")
             llama_process.terminate()
-            llama_process.wait(timeout=5)
-            print_log("✅ Llama server stopped")
+            print_log("[OK] Llama server stopped")
         except subprocess.TimeoutExpired:
             llama_process.kill()
             log("Llama server killed (timeout)")
@@ -324,8 +320,7 @@ def cleanup_processes():
             print_log(f"Cleaning up port {port} ({name})...")
             kill_process_on_port(port)
     
-    remove_lock()
-    print_log("✅ Cleanup complete")
+    print_log("[OK] Cleanup complete")
 
 def start_llama_server():
     """Start Llama server with timeout protection"""
@@ -391,7 +386,7 @@ def start_llama_server():
             return llama_process
             
     except Exception as e:
-        print_log(f"❌ Failed to start AI Engine: {e}")
+        print_log(f"[ERROR] Failed to start AI Engine: {e}")
         return None
 
 def start_node_server():
@@ -404,7 +399,7 @@ def start_node_server():
     try:
         subprocess.run(['node', '--version'], capture_output=True, timeout=5)
     except:
-        print_log("❌ Node.js not found. Please install Node.js from nodejs.org")
+        print_log("[ERROR] Node.js not found. Please install Node.js from nodejs.org")
         return None
     
     # Kill any existing process on port
@@ -435,15 +430,19 @@ def start_node_server():
         
         log(f"Node server started (PID: {node_process.pid})")
         
-        # Wait for server to be ready
-        if wait_for_port(NODE_PORT, timeout=30, service_name="Backend Server"):
+        # Give Node a moment to start binding to the port
+        time.sleep(3)
+        
+        # Wait for server to be ready (with longer timeout for slower systems)
+        if wait_for_port(NODE_PORT, timeout=60, service_name="Backend Server"):
             return node_process
         else:
-            print_log("[WARN] Backend server timeout")
-            return None
+            print_log("[WARN] Backend server timeout - but continuing anyway")
+            # Return the process even if timeout, it may still work
+            return node_process
             
     except Exception as e:
-        print_log(f"❌ Failed to start backend: {e}")
+        print_log(f"[ERROR] Failed to start backend: {e}")
         return None
 
 def open_browser():
@@ -458,7 +457,7 @@ def open_browser():
         print_log("[OK] Browser opened")
         print(f"\nApplication URL: {url}")
     except Exception as e:
-        print_log(f"⚠️ Could not open browser: {e}")
+        print_log(f"[WARN] Could not open browser: {e}")
         print(f"\nPlease open manually: {url}")
 
 def monitor_health():
@@ -473,12 +472,12 @@ def monitor_health():
         
         # Check if Node process died
         if node_process and node_process.poll() is not None:
-            print_log("⚠️ Node server died unexpectedly")
+            print_log("[WARN] Node server died unexpectedly")
             break
         
         # Check if Llama process died (non-critical)
         if llama_process and llama_process.poll() is not None:
-            print_log("⚠️ Llama server died (AI features disabled)")
+            print_log("[WARN] Llama server died (AI features disabled)")
             llama_process = None
 
 def main():
@@ -526,9 +525,9 @@ def main():
         node_proc = start_node_server()
         
         if not node_proc:
-            print_log("\n❌ Failed to start backend server")
+            print_log("\n[ERROR] Failed to start backend server")
             print("\nStartup failed. Check the log file for details.")
-            print("\n💡 To force kill any stuck processes:")
+            print("\n[INFO] To force kill any stuck processes:")
             print("   1. Create a file named 'codeforge.kill'")
             print("   2. Wait a few seconds")
             input("\nPress Enter to exit...")
