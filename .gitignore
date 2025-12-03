@@ -1,0 +1,127 @@
+# -------------------------
+# PYTHON
+# -------------------------
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv/
+.python-version
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# ML / Data
+*.pickle
+*.pkl
+*.joblib
+*.h5
+*.hdf5
+*.npy
+*.npz
+*.csv
+*.xlsx
+*.parquet
+data/
+datasets/
+models/
+checkpoints/
+cache/
+
+# -------------------------
+# NODE / JavaScript
+# -------------------------
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-store/
+coverage/
+
+# Build output
+dist/
+build/
+.next/
+out/
+cache/
+
+# -------------------------
+# FRONTEND (HTML/CSS/JS Build Tools)
+# -------------------------
+*.log
+*.temp
+*.tmp
+
+# -------------------------
+# JAVA
+# -------------------------
+*.class
+*.jar
+*.war
+*.ear
+target/
+build/
+.settings/
+.project
+.classpath
+.gradle/
+mvnw
+mvnw.cmd
+.idea/
+
+# -------------------------
+# VS CODE + EDITORS
+# -------------------------
+.vscode/
+*.code-workspace
+.history/
+*.swp
+*.swo
+
+# -------------------------
+# ENVIRONMENT & KEYS
+# -------------------------
+.env
+.env.*
+*.pem
+*.key
+*.secret
+secrets/
+config.json
+
+# -------------------------
+# TEMP FILES
+# -------------------------
+tmp/
+temp/
+*.tmp
+*.bak
+*.orig
+
+# QR codes and images you generate
+qrcodes/
+*.png
+*.jpg
+*.jpeg
+
+# -------------------------
+# OS FILES
+# -------------------------
+.DS_Store
+Thumbs.db
+
+# -------------------------
+# OPENAI / FASTAPI META
+# -------------------------
+openai_cache/
