@@ -71,7 +71,7 @@ def ensure_psutil():
 # ============= CONFIGURATION =============
 LLAMA_PORT = 8000
 NODE_PORT = 5050
-MODEL_PATH = './models/deepseek-coder-6.7b-instruct-Q3_K_S.gguf'
+MODEL_PATH = './models/deepseek-coder-6.7b-instruct.Q3_K_S.gguf'
 LOCK_FILE = 'codeforge.lock'
 LOG_FILE = 'codeforge_launcher.log'
 KILL_FILE = 'codeforge.kill'  # NEW: Emergency kill file
