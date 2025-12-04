@@ -7,6 +7,20 @@ const app = express();
 const PORT = 5050;
 const LLAMA_URL = 'http://localhost:8000';
 const PROJECT_ROOT = process.cwd();
+// Use a dedicated workspace folder for the editor file tree to avoid
+// exposing the repository root. This can be overridden by the
+// WORKSPACE_ROOT environment variable.
+const WORKSPACE_ROOT = process.env.WORKSPACE_ROOT || path.join(PROJECT_ROOT, 'workspace');
+// By default do not allow writing to arbitrary absolute paths. Set
+// ALLOW_ABSOLUTE=1 in the environment to enable absolute-path writes.
+const ALLOW_ABSOLUTE = process.env.ALLOW_ABSOLUTE === '1' || false;
+
+// Ensure the workspace directory exists
+try {
+    if (!fs.existsSync(WORKSPACE_ROOT)) fs.mkdirSync(WORKSPACE_ROOT, { recursive: true });
+} catch (e) {
+    console.error('Could not create workspace folder:', e.message);
+}
 
 // File upload support (for importing folders via browser)
 const multer = require('multer');
@@ -21,8 +35,9 @@ app.use((req, res, next) => {
     next();
 });
 
-// Serve static files
-app.use(express.static(PROJECT_ROOT));
+// Serve static frontend files from the server directory (script location)
+// and keep the editor's file operations limited to `WORKSPACE_ROOT`.
+app.use(express.static(__dirname));
 
 // Admin token validation
 const ADMIN_TOKEN = process.env.ADMIN_TOKEN || 'localdev';
@@ -64,7 +79,8 @@ app.get('/api/list-files', (req, res) => {
                 });
             } catch (e) { }
         }
-        walk(PROJECT_ROOT);
+        // List files under the workspace root (not the repository root)
+        walk(WORKSPACE_ROOT);
         res.json({ files });
     } catch (e) {
         res.status(500).json({ error: e.message });
@@ -79,8 +95,9 @@ app.post('/api/get-file', (req, res) => {
         const { path: filePath } = req.body;
         if (!filePath) return res.status(400).json({ error: 'Missing path' });
 
-        const fullPath = path.join(PROJECT_ROOT, filePath);
-        if (!fullPath.startsWith(PROJECT_ROOT)) {
+        // Only allow reading from workspace root
+        const fullPath = path.join(WORKSPACE_ROOT, filePath);
+        if (!fullPath.startsWith(WORKSPACE_ROOT)) {
             return res.status(403).json({ error: 'Access denied' });
         }
 
@@ -103,9 +120,19 @@ app.post('/api/save-file', (req, res) => {
     }
 
     try {
-        const fullPath = path.join(PROJECT_ROOT, filePath);
-        if (!fullPath.startsWith(PROJECT_ROOT)) {
-            return res.status(403).json({ error: 'Access denied' });
+        // Allow both relative paths (within PROJECT_ROOT) and absolute paths (user specified)
+        let fullPath;
+        if (path.isAbsolute(filePath)) {
+            if (!ALLOW_ABSOLUTE) {
+                return res.status(403).json({ error: 'Absolute paths not allowed. Set ALLOW_ABSOLUTE=1 to enable.' });
+            }
+            fullPath = filePath;
+        } else {
+            // Relative paths are resolved inside the workspace
+            fullPath = path.join(WORKSPACE_ROOT, filePath);
+            if (!fullPath.startsWith(WORKSPACE_ROOT)) {
+                return res.status(403).json({ error: 'Access denied' });
+            }
         }
 
         // Create backup
@@ -139,8 +166,8 @@ app.post('/api/delete-file', (req, res) => {
     if (!filePath) return res.status(400).json({ error: 'Missing path' });
 
     try {
-        const fullPath = path.join(PROJECT_ROOT, filePath);
-        if (!fullPath.startsWith(PROJECT_ROOT)) {
+        const fullPath = path.join(WORKSPACE_ROOT, filePath);
+        if (!fullPath.startsWith(WORKSPACE_ROOT)) {
             return res.status(403).json({ error: 'Access denied' });
         }
 
@@ -244,8 +271,8 @@ app.post('/api/create-file', (req, res) => {
     if (!filePath) return res.status(400).json({ error: 'Missing path' });
 
     try {
-        const fullPath = path.join(PROJECT_ROOT, filePath);
-        if (!fullPath.startsWith(PROJECT_ROOT)) return res.status(403).json({ error: 'Access denied' });
+        const fullPath = path.join(WORKSPACE_ROOT, filePath);
+        if (!fullPath.startsWith(WORKSPACE_ROOT)) return res.status(403).json({ error: 'Access denied' });
         const dir = path.dirname(fullPath);
         if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
         fs.writeFileSync(fullPath, content, 'utf-8');
@@ -264,8 +291,8 @@ app.post('/api/create-folder', (req, res) => {
     if (!folderPath) return res.status(400).json({ error: 'Missing path' });
 
     try {
-        const fullPath = path.join(PROJECT_ROOT, folderPath);
-        if (!fullPath.startsWith(PROJECT_ROOT)) return res.status(403).json({ error: 'Access denied' });
+        const fullPath = path.join(WORKSPACE_ROOT, folderPath);
+        if (!fullPath.startsWith(WORKSPACE_ROOT)) return res.status(403).json({ error: 'Access denied' });
         if (!fs.existsSync(fullPath)) fs.mkdirSync(fullPath, { recursive: true });
         res.json({ ok: true, path: folderPath });
     } catch (e) {
@@ -285,8 +312,8 @@ app.post('/api/import-folder', (req, res) => {
     try {
         if (!fs.existsSync(folderPath)) return res.status(400).json({ error: 'Source folder not found' });
 
-        const dest = path.join(PROJECT_ROOT, path.basename(folderPath));
-        if (!dest.startsWith(PROJECT_ROOT)) return res.status(403).json({ error: 'Access denied' });
+        const dest = path.join(WORKSPACE_ROOT, path.basename(folderPath));
+        if (!dest.startsWith(WORKSPACE_ROOT)) return res.status(403).json({ error: 'Access denied' });
 
         function copyDir(src, dst) {
             if (!fs.existsSync(dst)) fs.mkdirSync(dst, { recursive: true });

@@ -269,7 +269,9 @@ def wait_for_port(port, timeout=120, service_name="Service"):
             print_log("Emergency kill detected during startup")
             return False
             
+        if is_port_in_use(port):
             print_log(f"[OK] {service_name} ready on port {port}")
+            return True
         
         elapsed = int(time.time() - start_time)
         if elapsed % 10 == 0 and elapsed > 0:
@@ -295,6 +297,7 @@ def cleanup_processes():
         try:
             print_log("Stopping Node server...")
             node_process.terminate()
+            node_process.wait(timeout=5)
             print_log("[OK] Node server stopped")
         except subprocess.TimeoutExpired:
             node_process.kill()
@@ -307,6 +310,7 @@ def cleanup_processes():
         try:
             print_log("Stopping Llama server...")
             llama_process.terminate()
+            llama_process.wait(timeout=5)
             print_log("[OK] Llama server stopped")
         except subprocess.TimeoutExpired:
             llama_process.kill()
@@ -320,6 +324,7 @@ def cleanup_processes():
             print_log(f"Cleaning up port {port} ({name})...")
             kill_process_on_port(port)
     
+    remove_lock()
     print_log("[OK] Cleanup complete")
 
 def start_llama_server():

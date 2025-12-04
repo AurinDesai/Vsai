@@ -817,6 +817,7 @@
                 <div class="menu-item" onclick="importFolderPrompt()" style="padding:6px 10px; cursor:pointer;">Import Folder (from server)</div>
                 <div class="menu-item" onclick="importFolderLocal()" style="padding:6px 10px; cursor:pointer;">Add Existing Folder (Upload)</div>
                 <div class="menu-item" onclick="saveCurrentFile()" style="padding:6px 10px; cursor:pointer;">Save</div>
+                <div class="menu-item" onclick="saveFileAs()" style="padding:6px 10px; cursor:pointer;">Save As</div>
                 <div class="menu-item" onclick="deleteCurrentFile()" style="padding:6px 10px; cursor:pointer;">Delete File</div>
             </div>
         </div>
@@ -1647,6 +1648,13 @@
         async function saveCurrentFile() {
             if (!activeTab) return;
 
+            // If unsaved file, ask for path first
+            if (!activeTab.path || activeTab.path.startsWith('untitled-')) {
+                const name = prompt('Save file as:\n\n- Relative: src/myfile.js\n- Absolute: C:\\Users\\You\\Documents\\file.js');
+                if (!name) return;
+                activeTab.path = name;
+            }
+
             // Prevent overlapping saves
             if (activeTab.saving) return;
             activeTab.saving = true;
@@ -1669,11 +1677,13 @@
                 if (data.ok) {
                     activeTab.modified = false;
                     activeTab.saving = false;
+                    activeTab.unsaved = false;
                     renderTabs();
-                    addChatMessage('System', `✅ Saved ${activeTab.path}`, 'assistant');
+                    loadFileTree();
+                    addChatMessage('System', `[OK] Saved ${activeTab.path}`, 'assistant');
                 } else {
                     activeTab.saving = false;
-                    addChatMessage('System', `❌ Save failed: ${data.error}`, 'assistant');
+                    addChatMessage('System', `[ERROR] Save failed: ${data.error}`, 'assistant');
                 }
             } catch (e) {
                 console.error('Save error:', e);
@@ -1681,6 +1691,21 @@
                 addChatMessage('System', `❌ Save error: ${e.message}`, 'assistant');
             } finally {
             }
+        }
+
+        // Save file with a new path (Save As dialog)
+        async function saveFileAs() {
+            if (!activeTab) return;
+
+            // Prompt for new path
+            const newPath = prompt('Save file as:\n\n- Relative: src/myfile.js\n- Absolute: C:\\Users\\You\\Documents\\file.js');
+            if (!newPath) return;
+
+            // Update the tab path to the new location
+            activeTab.path = newPath;
+
+            // Now save it with the new path
+            await saveCurrentFile();
         }
 
         // ============= IMPORT FOLDER & TERMINAL =============
@@ -2252,28 +2277,35 @@
         }
 
         async function newFile() {
-            const name = prompt('New file path (e.g. src/newfile.js):');
-            if (!name) return;
-            try {
-                const headers = { 'Content-Type': 'application/json' };
-                const token = localStorage.getItem('CODEFORGE_ADMIN_TOKEN');
-                if (token) headers['x-admin-token'] = token;
-
-                const response = await fetch(`${API_URL}/create-file`, {
-                    method: 'POST', headers, body: JSON.stringify({ path: name, content: '' })
-                });
-                const data = await response.json();
-                if (data.ok) {
-                    addChatMessage('System', `✅ Created file: ${name}`, 'assistant');
-                    loadFileTree();
-                    openFile(name);
-                } else {
-                    addChatMessage('System', `❌ Create failed: ${data.error}`, 'assistant');
-                }
-            } catch (e) {
-                console.error('Create file error', e);
-                addChatMessage('System', `❌ Error: ${e.message}`, 'assistant');
+            // Create an unsaved file in memory first (not on disk)
+            const fileId = `untitled-${Date.now()}`;
+            const tab = document.createElement('div');
+            tab.className = 'tab active';
+            tab.textContent = 'Untitled';
+            tab.onclick = () => switchTab(fileId);
+            tab.innerHTML += ` <span onclick="closeTab('${fileId}', event)" style="cursor:pointer; margin-left:4px;">✕</span>`;
+            const tabBar = document.getElementById('tab-bar');
+            if (!tabBar) {
+                addChatMessage('System', '[ERROR] Tab bar not found in UI', 'assistant');
+                return;
             }
+            tabBar.appendChild(tab);
+            
+            // Store the unsaved file in memory
+            window.openFiles = window.openFiles || {};
+            window.openFiles[fileId] = { path: null, content: '', unsaved: true };
+            window.currentFile = fileId;
+            
+            // Update editor
+            const editor = document.getElementById('editor');
+            editor.value = '';
+            editor.focus();
+            
+            // Update tab styling
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            tab.classList.add('active');
+            
+            addChatMessage('System', '[INFO] New unsaved file created. Edit and use Save (Ctrl+S) to choose location.', 'assistant');
         }
 
         async function newFolder() {
