@@ -2,516 +2,409 @@ const express = require('express');
 const { exec } = require('child_process');
 const fs = require('fs');
 const path = require('path');
+const cors = require('cors');
 
 const app = express();
-const PORT = 5050;
+const PORT = process.env.PORT || 5050;
 const LLAMA_URL = 'http://localhost:8000';
-const PROJECT_ROOT = process.cwd();
-// Use a dedicated workspace folder for the editor file tree to avoid
-// exposing the repository root. This can be overridden by the
-// WORKSPACE_ROOT environment variable.
-const WORKSPACE_ROOT = process.env.WORKSPACE_ROOT || path.join(PROJECT_ROOT, 'workspace');
-// By default do not allow writing to arbitrary absolute paths. Set
-// ALLOW_ABSOLUTE=1 in the environment to enable absolute-path writes.
-const ALLOW_ABSOLUTE = process.env.ALLOW_ABSOLUTE === '1' || false;
 
-// Ensure the workspace directory exists
-try {
-    if (!fs.existsSync(WORKSPACE_ROOT)) fs.mkdirSync(WORKSPACE_ROOT, { recursive: true });
-} catch (e) {
-    console.error('Could not create workspace folder:', e.message);
+// CRITICAL FIX: Use workspace subfolder to prevent root pollution
+const PROJECT_ROOT = process.cwd();
+const WORKSPACE_ROOT = path.join(PROJECT_ROOT, 'workspace');
+
+// Create workspace directory if it doesn't exist
+if (!fs.existsSync(WORKSPACE_ROOT)) {
+    fs.mkdirSync(WORKSPACE_ROOT, { recursive: true });
+    console.log(`✅ Created workspace directory: ${WORKSPACE_ROOT}`);
 }
 
-// File upload support (for importing folders via browser)
+// Admin token for security
+const ADMIN_TOKEN = process.env.ADMIN_TOKEN || 'localdev';
+
+// Middleware
+app.use(cors());
+app.use(express.json({ limit: '100mb' }));
+app.use(express.urlencoded({ extended: true, limit: '100mb' }));
+
+// Serve static files from project root (for HTML/CSS/JS)
+app.use(express.static(PROJECT_ROOT));
+
+// File upload support
 const multer = require('multer');
 const upload = multer({ storage: multer.memoryStorage() });
 
-// Middleware
-app.use(express.json({ limit: '50mb' }));
-app.use((req, res, next) => {
-    res.header('Access-Control-Allow-Origin', '*');
-    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-    res.header('Access-Control-Allow-Headers', 'Content-Type, x-admin-token');
-    next();
-});
-
-// Serve static frontend files from the server directory (script location)
-// and keep the editor's file operations limited to `WORKSPACE_ROOT`.
-app.use(express.static(__dirname));
-
-// Admin token validation
-const ADMIN_TOKEN = process.env.ADMIN_TOKEN || 'localdev';
+// ============= SECURITY HELPERS =============
 function checkAdminToken(req, res) {
     const token = req.headers['x-admin-token'];
     if (!token || token !== ADMIN_TOKEN) {
-        res.status(401).json({ ok: false, error: 'Unauthorized' });
+        res.status(401).json({ ok: false, error: 'Unauthorized - invalid admin token' });
         return false;
     }
     return true;
 }
 
+function sanitizePath(userPath) {
+    // Remove leading slashes and normalize
+    const cleaned = path.normalize(userPath).replace(/^[\\\/]+/, '');
+    // Resolve within workspace
+    const fullPath = path.join(WORKSPACE_ROOT, cleaned);
+    
+    // CRITICAL: Prevent directory traversal
+    if (!fullPath.startsWith(WORKSPACE_ROOT)) {
+        throw new Error('Access denied: path outside workspace');
+    }
+    
+    return fullPath;
+}
+
 // ============= FILE OPERATIONS =============
 
-/**
- * List all files in project
- */
+// List all files in workspace
 app.get('/api/list-files', (req, res) => {
     try {
         const files = [];
-        function walk(dir, prefix = '') {
+        
+        function walkDirectory(dir, prefix = '') {
             try {
                 const items = fs.readdirSync(dir);
+                
                 items.forEach(item => {
+                    // Skip hidden files and node_modules
                     if (item.startsWith('.') || item === 'node_modules') return;
+                    
                     const fullPath = path.join(dir, item);
+                    const relativePath = prefix ? `${prefix}/${item}` : item;
+                    
                     try {
                         const stat = fs.statSync(fullPath);
+                        
                         if (stat.isDirectory()) {
-                            walk(fullPath, prefix ? `${prefix}/${item}` : item);
+                            walkDirectory(fullPath, relativePath);
                         } else {
                             files.push({
-                                name: prefix ? `${prefix}/${item}` : item,
+                                name: relativePath,
                                 size: stat.size,
-                                modified: stat.mtime
+                                modified: stat.mtime,
+                                isDirectory: false
                             });
                         }
-                    } catch (e) { }
+                    } catch (err) {
+                        console.error(`Error reading ${fullPath}:`, err.message);
+                    }
                 });
-            } catch (e) { }
+            } catch (err) {
+                console.error(`Error reading directory ${dir}:`, err.message);
+            }
         }
-        // List files under the workspace root (not the repository root)
-        walk(WORKSPACE_ROOT);
-        res.json({ files });
-    } catch (e) {
-        res.status(500).json({ error: e.message });
+        
+        walkDirectory(WORKSPACE_ROOT);
+        res.json({ ok: true, files });
+    } catch (err) {
+        res.status(500).json({ ok: false, error: err.message });
     }
 });
 
-/**
- * Get file content
- */
+// Get file content
 app.post('/api/get-file', (req, res) => {
     try {
         const { path: filePath } = req.body;
-        if (!filePath) return res.status(400).json({ error: 'Missing path' });
-
-        // Only allow reading from workspace root
-        const fullPath = path.join(WORKSPACE_ROOT, filePath);
-        if (!fullPath.startsWith(WORKSPACE_ROOT)) {
-            return res.status(403).json({ error: 'Access denied' });
+        if (!filePath) {
+            return res.status(400).json({ ok: false, error: 'Missing path' });
         }
-
+        
+        const fullPath = sanitizePath(filePath);
         const content = fs.readFileSync(fullPath, 'utf-8');
-        res.json({ ok: true, content });
-    } catch (e) {
-        res.status(404).json({ error: 'File not found' });
+        
+        res.json({ ok: true, content, path: filePath });
+    } catch (err) {
+        res.status(404).json({ ok: false, error: `File not found: ${err.message}` });
     }
 });
 
-/**
- * Save file (requires admin token)
- */
+// Save file (with backup)
 app.post('/api/save-file', (req, res) => {
     if (!checkAdminToken(req, res)) return;
-
-    const { path: filePath, content } = req.body;
-    if (!filePath || content === undefined) {
-        return res.status(400).json({ error: 'Missing path or content' });
-    }
-
+    
     try {
-        // Allow both relative paths (within PROJECT_ROOT) and absolute paths (user specified)
-        let fullPath;
-        if (path.isAbsolute(filePath)) {
-            if (!ALLOW_ABSOLUTE) {
-                return res.status(403).json({ error: 'Absolute paths not allowed. Set ALLOW_ABSOLUTE=1 to enable.' });
-            }
-            fullPath = filePath;
-        } else {
-            // Relative paths are resolved inside the workspace
-            fullPath = path.join(WORKSPACE_ROOT, filePath);
-            if (!fullPath.startsWith(WORKSPACE_ROOT)) {
-                return res.status(403).json({ error: 'Access denied' });
-            }
+        const { path: filePath, content } = req.body;
+        
+        if (!filePath || content === undefined) {
+            return res.status(400).json({ ok: false, error: 'Missing path or content' });
         }
-
-        // Create backup
+        
+        const fullPath = sanitizePath(filePath);
+        const dir = path.dirname(fullPath);
+        
+        // Create directory if needed
+        if (!fs.existsSync(dir)) {
+            fs.mkdirSync(dir, { recursive: true });
+        }
+        
+        // Backup existing file
         if (fs.existsSync(fullPath)) {
             const backupPath = fullPath + '.bak';
             fs.copyFileSync(fullPath, backupPath);
         }
-
-        // Create directory if needed
-        const dir = path.dirname(fullPath);
-        if (!fs.existsSync(dir)) {
-            fs.mkdirSync(dir, { recursive: true });
-        }
-
+        
         // Write file
         fs.writeFileSync(fullPath, content, 'utf-8');
-
-        res.json({ ok: true, path: filePath });
-    } catch (e) {
-        res.status(500).json({ error: e.message });
+        
+        console.log(`✅ Saved: ${filePath} (${content.length} bytes)`);
+        res.json({ ok: true, path: filePath, size: content.length });
+    } catch (err) {
+        console.error('Save error:', err);
+        res.status(500).json({ ok: false, error: err.message });
     }
 });
 
-/**
- * Delete file (requires admin token)
- */
+// Create new file
+app.post('/api/create-file', (req, res) => {
+    if (!checkAdminToken(req, res)) return;
+    
+    try {
+        const { path: filePath, content = '' } = req.body;
+        
+        if (!filePath) {
+            return res.status(400).json({ ok: false, error: 'Missing path' });
+        }
+        
+        const fullPath = sanitizePath(filePath);
+        const dir = path.dirname(fullPath);
+        
+        // Create directory if needed
+        if (!fs.existsSync(dir)) {
+            fs.mkdirSync(dir, { recursive: true });
+        }
+        
+        fs.writeFileSync(fullPath, content, 'utf-8');
+        
+        console.log(`✅ Created: ${filePath}`);
+        res.json({ ok: true, path: filePath });
+    } catch (err) {
+        res.status(500).json({ ok: false, error: err.message });
+    }
+});
+
+// Create folder
+app.post('/api/create-folder', (req, res) => {
+    if (!checkAdminToken(req, res)) return;
+    
+    try {
+        const { path: folderPath } = req.body;
+        
+        if (!folderPath) {
+            return res.status(400).json({ ok: false, error: 'Missing path' });
+        }
+        
+        const fullPath = sanitizePath(folderPath);
+        
+        if (!fs.existsSync(fullPath)) {
+            fs.mkdirSync(fullPath, { recursive: true });
+        }
+        
+        console.log(`✅ Created folder: ${folderPath}`);
+        res.json({ ok: true, path: folderPath });
+    } catch (err) {
+        res.status(500).json({ ok: false, error: err.message });
+    }
+});
+
+// Delete file
 app.post('/api/delete-file', (req, res) => {
     if (!checkAdminToken(req, res)) return;
-
-    const { path: filePath } = req.body;
-    if (!filePath) return res.status(400).json({ error: 'Missing path' });
-
+    
     try {
-        const fullPath = path.join(WORKSPACE_ROOT, filePath);
-        if (!fullPath.startsWith(WORKSPACE_ROOT)) {
-            return res.status(403).json({ error: 'Access denied' });
+        const { path: filePath } = req.body;
+        
+        if (!filePath) {
+            return res.status(400).json({ ok: false, error: 'Missing path' });
         }
-
+        
+        const fullPath = sanitizePath(filePath);
+        
         if (fs.existsSync(fullPath)) {
             fs.unlinkSync(fullPath);
+            console.log(`✅ Deleted: ${filePath}`);
         }
+        
+        res.json({ ok: true, deleted: filePath });
+    } catch (err) {
+        res.status(500).json({ ok: false, error: err.message });
+    }
+});
 
-        res.json({ ok: true });
-    } catch (e) {
-        res.status(500).json({ error: e.message });
+// Rename/Move file
+app.post('/api/rename-file', (req, res) => {
+    if (!checkAdminToken(req, res)) return;
+    
+    try {
+        const { oldPath, newPath } = req.body;
+        
+        if (!oldPath || !newPath) {
+            return res.status(400).json({ ok: false, error: 'Missing paths' });
+        }
+        
+        const oldFullPath = sanitizePath(oldPath);
+        const newFullPath = sanitizePath(newPath);
+        
+        // Create target directory if needed
+        const newDir = path.dirname(newFullPath);
+        if (!fs.existsSync(newDir)) {
+            fs.mkdirSync(newDir, { recursive: true });
+        }
+        
+        fs.renameSync(oldFullPath, newFullPath);
+        
+        console.log(`✅ Renamed: ${oldPath} → ${newPath}`);
+        res.json({ ok: true, oldPath, newPath });
+    } catch (err) {
+        res.status(500).json({ ok: false, error: err.message });
+    }
+});
+
+// Upload folder (browser folder picker)
+app.post('/api/upload-folder', upload.any(), (req, res) => {
+    if (!checkAdminToken(req, res)) return;
+    
+    try {
+        const files = req.files || [];
+        
+        if (files.length === 0) {
+            return res.status(400).json({ ok: false, error: 'No files uploaded' });
+        }
+        
+        let count = 0;
+        const results = [];
+        
+        for (const file of files) {
+            try {
+                // Get relative path from original filename
+                let relativePath = file.originalname || file.fieldname || '';
+                
+                // Handle webkitRelativePath if available
+                if (file.webkitRelativePath) {
+                    relativePath = file.webkitRelativePath;
+                }
+                
+                // Clean path
+                relativePath = relativePath.replace(/\\/g, '/').replace(/^\//, '');
+                
+                if (!relativePath) continue;
+                
+                const fullPath = sanitizePath(relativePath);
+                const dir = path.dirname(fullPath);
+                
+                // Create directory if needed
+                if (!fs.existsSync(dir)) {
+                    fs.mkdirSync(dir, { recursive: true });
+                }
+                
+                // Write file
+                fs.writeFileSync(fullPath, file.buffer);
+                
+                count++;
+                results.push(`✅ ${relativePath}`);
+            } catch (err) {
+                results.push(`❌ ${file.originalname}: ${err.message}`);
+            }
+        }
+        
+        console.log(`✅ Uploaded ${count}/${files.length} files`);
+        res.json({ ok: true, count, total: files.length, results: results.slice(0, 20) });
+    } catch (err) {
+        res.status(500).json({ ok: false, error: err.message });
     }
 });
 
 // ============= AI STREAMING =============
 
-/**
- * Stream text generation from Llama (or fallback response if unavailable)
- */
 app.post('/api/stream', async (req, res) => {
-    const { prompt, n_predict = 2000, temperature = 0.7, top_p = 0.9 } = req.body;
-
+    const { prompt, n_predict = 2000, temperature = 0.7 } = req.body;
+    
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
-
+    
     try {
-        // Try Llama with a short timeout
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 3000);
-
-        try {
-            const response = await fetch(`${LLAMA_URL}/completion`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    prompt,
-                    n_predict,
-                    temperature,
-                    top_p,
-                    top_k: 40,
-                    repeat_penalty: 1.05,
-                    stream: true
-                }),
-                signal: controller.signal
-            });
-
-            clearTimeout(timeoutId);
-
-            if (response.ok) {
-                const reader = response.body.getReader();
-                const decoder = new TextDecoder();
-                let buffer = '';
-
-                while (true) {
-                    const { done, value } = await reader.read();
-                    if (done) break;
-
-                    buffer += decoder.decode(value, { stream: true });
-                    const lines = buffer.split('\n');
-                    buffer = lines.pop() || '';
-
-                    for (const line of lines) {
-                        if (line.startsWith('data:')) {
-                            try {
-                                const json = JSON.parse(line.substring(5));
-                                if (json.content) {
-                                    res.write(`data: ${JSON.stringify({ content: json.content })}\n\n`);
-                                }
-                            } catch (e) { }
-                        }
+        const timeout = setTimeout(() => controller.abort(), 5000);
+        
+        const response = await fetch(`${LLAMA_URL}/completion`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                prompt,
+                n_predict,
+                temperature,
+                stream: true
+            }),
+            signal: controller.signal
+        });
+        
+        clearTimeout(timeout);
+        
+        if (response.ok) {
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                
+                const text = decoder.decode(value);
+                const lines = text.split('\n');
+                
+                for (const line of lines) {
+                    if (line.startsWith('data:')) {
+                        res.write(line + '\n\n');
                     }
                 }
-
-                res.write('data: [DONE]\n\n');
-                res.end();
-                return;
             }
-        } catch (e) {
-            clearTimeout(timeoutId);
         }
-
-        // Fallback if Llama unavailable
-        const fallbackMsg = "CodeForge Studio is ready for editing and file management. AI features require Llama server (optional). For now, you can create, edit, and save files using the editor!";
-        res.write(`data: ${JSON.stringify({ content: fallbackMsg })}\n\n`);
+        
         res.write('data: [DONE]\n\n');
         res.end();
-    } catch (e) {
-        res.write(`data: ${JSON.stringify({ error: 'Stream error' })}\n\n`);
+    } catch (err) {
+        const fallback = "CodeForge AI is ready! (Llama server optional)";
+        res.write(`data: ${JSON.stringify({ content: fallback })}\n\n`);
+        res.write('data: [DONE]\n\n');
         res.end();
-    }
-});
-
-// ============= CREATE / FOLDER OPERATIONS =============
-
-/**
- * Create a new file (requires admin token)
- */
-app.post('/api/create-file', (req, res) => {
-    if (!checkAdminToken(req, res)) return;
-    const { path: filePath, content = '' } = req.body;
-    if (!filePath) return res.status(400).json({ error: 'Missing path' });
-
-    try {
-        const fullPath = path.join(WORKSPACE_ROOT, filePath);
-        if (!fullPath.startsWith(WORKSPACE_ROOT)) return res.status(403).json({ error: 'Access denied' });
-        const dir = path.dirname(fullPath);
-        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-        fs.writeFileSync(fullPath, content, 'utf-8');
-        res.json({ ok: true, path: filePath });
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
-});
-
-/**
- * Create folder (requires admin token)
- */
-app.post('/api/create-folder', (req, res) => {
-    if (!checkAdminToken(req, res)) return;
-    const { path: folderPath } = req.body;
-    if (!folderPath) return res.status(400).json({ error: 'Missing path' });
-
-    try {
-        const fullPath = path.join(WORKSPACE_ROOT, folderPath);
-        if (!fullPath.startsWith(WORKSPACE_ROOT)) return res.status(403).json({ error: 'Access denied' });
-        if (!fs.existsSync(fullPath)) fs.mkdirSync(fullPath, { recursive: true });
-        res.json({ ok: true, path: folderPath });
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
-});
-
-/**
- * Import an external folder into the project (requires admin token)
- * Copies files from an absolute path into a subfolder under PROJECT_ROOT
- */
-app.post('/api/import-folder', (req, res) => {
-    if (!checkAdminToken(req, res)) return;
-    const { folderPath } = req.body;
-    if (!folderPath) return res.status(400).json({ error: 'Missing folderPath' });
-
-    try {
-        if (!fs.existsSync(folderPath)) return res.status(400).json({ error: 'Source folder not found' });
-
-        const dest = path.join(WORKSPACE_ROOT, path.basename(folderPath));
-        if (!dest.startsWith(WORKSPACE_ROOT)) return res.status(403).json({ error: 'Access denied' });
-
-        function copyDir(src, dst) {
-            if (!fs.existsSync(dst)) fs.mkdirSync(dst, { recursive: true });
-            let count = 0;
-            const items = fs.readdirSync(src);
-            for (const item of items) {
-                if (item.startsWith('.') || item === 'node_modules') continue;
-                const s = path.join(src, item);
-                const d = path.join(dst, item);
-                const stat = fs.statSync(s);
-                if (stat.isDirectory()) {
-                    count += copyDir(s, d);
-                } else {
-                    fs.copyFileSync(s, d);
-                    count++;
-                }
-            }
-            return count;
-        }
-
-        const count = copyDir(folderPath, dest);
-        res.json({ ok: true, count, dest });
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
-});
-
-/**
- * Upload folder files from browser (requires admin token)
- * Expects multipart/form-data with field name 'files' and file names containing relative paths
- */
-// Improved upload handler: accept any file field, preserve relative paths (from webkitRelativePath),
-// write files to project tree and log results for debugging.
-app.post('/api/upload-folder', upload.any(), (req, res) => {
-    if (!checkAdminToken(req, res)) return;
-    try {
-        const files = req.files || [];
-        if (files.length === 0) return res.status(400).json({ error: 'No files uploaded' });
-
-        // Get target folder from form data (user specifies where to upload)
-        let targetFolder = (req.body?.targetFolder || '').trim();
-        if (!targetFolder) {
-            targetFolder = '';
-        }
-
-        let count = 0;
-        const logLines = [];
-
-        for (const f of files) {
-            // Some browsers send webkitRelativePath in the `originalname` when the 3rd arg of form.append is used.
-            // Other times the browser may put the relative path in a custom property; try common fallbacks.
-            let relPath = f.originalname || f.filename || f.fieldname || '';
-            // If a client sent a custom property webkitRelativePath, prefer that.
-            if (f.webkitRelativePath) relPath = f.webkitRelativePath;
-
-            relPath = String(relPath).replace(/\\/g, '/').replace(/^\//, '').trim();
-            if (!relPath) continue;
-
-            // Construct full path: PROJECT_ROOT / targetFolder / relPath
-            let fullPath = path.join(PROJECT_ROOT, targetFolder, relPath);
-            if (!fullPath.startsWith(PROJECT_ROOT)) {
-                logLines.push(`SKIP (out-of-root): ${relPath}`);
-                continue;
-            }
-
-            const dir = path.dirname(fullPath);
-            if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-
-            // Buffer may be present for memoryStorage; for other storage engines, fallback to path
-            if (f.buffer) {
-                fs.writeFileSync(fullPath, f.buffer);
-            } else if (f.path && fs.existsSync(f.path)) {
-                fs.copyFileSync(f.path, fullPath);
-            } else {
-                // Nothing to write
-                logLines.push(`WARN (no data): ${relPath}`);
-                continue;
-            }
-
-            count++;
-            logLines.push(`WROTE: ${relPath}`);
-        }
-
-        // Append to upload log for debugging
-        try {
-            const logPath = path.join(PROJECT_ROOT, 'codeforge_upload.log');
-            const now = new Date().toISOString();
-            fs.appendFileSync(logPath, `--- ${now} - uploaded ${count} files\n` + logLines.join('\n') + '\n');
-        } catch (e) { }
-
-        res.json({ ok: true, count, details: logLines.slice(0, 50) });
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
-});
-
-// ============= DEPENDENCY CHECKER =============
-
-/**
- * Check package.json and requirements.txt for outdated dependencies
- */
-app.get('/api/check-deps', async (req, res) => {
-    try {
-        const result = { npm: [], pip: [] };
-
-        // Check package.json
-        const pkgPath = path.join(PROJECT_ROOT, 'package.json');
-        if (fs.existsSync(pkgPath)) {
-            try {
-                const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
-                const deps = Object.assign({}, pkg.dependencies || {}, pkg.devDependencies || {});
-                for (const [name, ver] of Object.entries(deps)) {
-                    try {
-                        const r = await fetch(`https://registry.npmjs.org/${encodeURIComponent(name)}/latest`);
-                        if (!r.ok) continue;
-                        const j = await r.json();
-                        const latest = j.version;
-                        const current = ('' + ver).replace(/^[^0-9]*/g, '');
-                        result.npm.push({ name, current, latest, outdated: latest && current && latest !== current });
-                    } catch (e) { }
-                }
-            } catch (e) { }
-        }
-
-        // Check requirements.txt
-        const reqPath = path.join(PROJECT_ROOT, 'requirements.txt');
-        if (fs.existsSync(reqPath)) {
-            try {
-                const lines = fs.readFileSync(reqPath, 'utf-8').split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-                for (const line of lines) {
-                    const parts = line.split(/[=<>!~]+/).map(p => p.trim()).filter(Boolean);
-                    const name = parts[0];
-                    const current = parts[1] || '';
-                    try {
-                        const r = await fetch(`https://pypi.org/pypi/${encodeURIComponent(name)}/json`);
-                        if (!r.ok) continue;
-                        const j = await r.json();
-                        const latest = j.info && j.info.version;
-                        result.pip.push({ name, current: current || 'unknown', latest, outdated: latest && current && latest !== current });
-                    } catch (e) { }
-                }
-            } catch (e) { }
-        }
-
-        res.json(result);
-    } catch (e) {
-        res.status(500).json({ error: e.message });
     }
 });
 
 // ============= COMMAND EXECUTION =============
 
-/**
- * Execute shell command (requires admin token)
- */
 app.post('/api/exec', (req, res) => {
     if (!checkAdminToken(req, res)) return;
-
+    
     const { cmd } = req.body;
-    if (!cmd) return res.status(400).json({ error: 'Missing command' });
-
-    exec(cmd, { cwd: PROJECT_ROOT, maxBuffer: 5 * 1024 * 1024 }, (error, stdout, stderr) => {
+    
+    if (!cmd) {
+        return res.status(400).json({ ok: false, error: 'Missing command' });
+    }
+    
+    console.log(`⚡ Executing: ${cmd}`);
+    
+    exec(cmd, {
+        cwd: WORKSPACE_ROOT,
+        timeout: 300000, // 5 minutes
+        maxBuffer: 10 * 1024 * 1024 // 10MB
+    }, (error, stdout, stderr) => {
         res.json({
             ok: !error,
-            stdout,
-            stderr,
+            stdout: stdout || '',
+            stderr: stderr || '',
             error: error ? error.message : null
         });
     });
 });
 
-// ============= GIT / SOURCE CONTROL =============
+// ============= GIT OPERATIONS =============
 
-/**
- * Commit changes (requires admin token)
- */
-app.post('/api/git-commit', (req, res) => {
-    if (!checkAdminToken(req, res)) return;
-
-    const { message } = req.body;
-    if (!message) return res.status(400).json({ error: 'Missing message' });
-
-    const gitCmd = `git -C "${PROJECT_ROOT}" add -A && git -C "${PROJECT_ROOT}" commit -m "${message.replace(/"/g, '\\"')}"`;
-
-    exec(gitCmd, (error, stdout, stderr) => {
-        if (error && !stdout.includes('nothing to commit')) {
-            return res.status(500).json({ error: stderr });
-        }
-        res.json({ ok: true, message: stdout || 'Committed' });
-    });
-});
-
-/**
- * Get git status
- */
 app.get('/api/git-status', (req, res) => {
-    exec(`git -C "${PROJECT_ROOT}" status --porcelain`, (error, stdout) => {
+    exec('git status --porcelain', { cwd: WORKSPACE_ROOT }, (error, stdout) => {
         const changes = [];
+        
         if (!error && stdout) {
             stdout.split('\n').forEach(line => {
                 if (line.trim()) {
@@ -521,115 +414,139 @@ app.get('/api/git-status', (req, res) => {
                 }
             });
         }
-        res.json({ changes });
+        
+        res.json({ ok: true, changes });
     });
 });
 
-/**
- * Sync files to partner (requires admin token)
- */
-app.post('/api/sync', (req, res) => {
+app.post('/api/git-commit', (req, res) => {
     if (!checkAdminToken(req, res)) return;
-
-    const { partnerPath } = req.body;
-    if (!partnerPath) return res.status(400).json({ error: 'Missing partnerPath' });
-
-    try {
-        if (!fs.existsSync(partnerPath)) {
-            fs.mkdirSync(partnerPath, { recursive: true });
+    
+    const { message } = req.body;
+    
+    if (!message) {
+        return res.status(400).json({ ok: false, error: 'Missing commit message' });
+    }
+    
+    const cmd = `git add -A && git commit -m "${message.replace(/"/g, '\\"')}"`;
+    
+    exec(cmd, { cwd: WORKSPACE_ROOT }, (error, stdout, stderr) => {
+        if (error && !stdout.includes('nothing to commit')) {
+            return res.status(500).json({ ok: false, error: stderr });
         }
+        
+        res.json({ ok: true, message: stdout || 'Committed successfully' });
+    });
+});
 
-        function syncDir(src, dest) {
-            const items = fs.readdirSync(src);
-            let count = 0;
+// ============= SEARCH =============
 
+app.post('/api/search', (req, res) => {
+    const { query } = req.body;
+    
+    if (!query) {
+        return res.status(400).json({ ok: false, error: 'Missing query' });
+    }
+    
+    const results = [];
+    
+    function searchInDirectory(dir, prefix = '') {
+        try {
+            const items = fs.readdirSync(dir);
+            
             items.forEach(item => {
                 if (item.startsWith('.') || item === 'node_modules') return;
-
-                const srcPath = path.join(src, item);
-                const destPath = path.join(dest, item);
-                const stat = fs.statSync(srcPath);
-
-                if (stat.isDirectory()) {
-                    if (!fs.existsSync(destPath)) {
-                        fs.mkdirSync(destPath, { recursive: true });
+                
+                const fullPath = path.join(dir, item);
+                const relativePath = prefix ? `${prefix}/${item}` : item;
+                
+                try {
+                    const stat = fs.statSync(fullPath);
+                    
+                    if (stat.isDirectory()) {
+                        searchInDirectory(fullPath, relativePath);
+                    } else {
+                        // Search in filename
+                        if (item.toLowerCase().includes(query.toLowerCase())) {
+                            results.push({ path: relativePath, type: 'filename' });
+                        }
+                        
+                        // Search in content (for text files)
+                        if (stat.size < 1024 * 1024) { // Max 1MB
+                            try {
+                                const content = fs.readFileSync(fullPath, 'utf-8');
+                                if (content.toLowerCase().includes(query.toLowerCase())) {
+                                    results.push({ path: relativePath, type: 'content' });
+                                }
+                            } catch (err) {
+                                // Skip binary files
+                            }
+                        }
                     }
-                    count += syncDir(srcPath, destPath);
-                } else {
-                    fs.copyFileSync(srcPath, destPath);
-                    count++;
+                } catch (err) {
+                    // Skip inaccessible files
                 }
             });
-
-            return count;
+        } catch (err) {
+            // Skip inaccessible directories
         }
-
-        const count = syncDir(PROJECT_ROOT, partnerPath);
-        res.json({ ok: true, count, message: `Synced ${count} files` });
-    } catch (e) {
-        res.status(500).json({ error: e.message });
     }
+    
+    searchInDirectory(WORKSPACE_ROOT);
+    
+    res.json({ ok: true, results: results.slice(0, 100) });
 });
 
-// ============= ANALYSIS =============
+// ============= HEALTH CHECK =============
 
-/**
- * Analyze code
- */
-app.post('/api/analyze-code', (req, res) => {
-    const { code } = req.body;
-    if (!code) return res.status(400).json({ error: 'Missing code' });
-
-    const analysis = {
-        lineCount: code.split('\n').length,
-        codeQuality: 0,
-        security: [],
-        performance: [],
-        architecture: [],
-        issues: []
-    };
-
-    let quality = 50;
-
-    if (/try\s*{[\s\S]*?}\s*catch/i.test(code)) {
-        quality += 15;
-    } else {
-        analysis.issues.push('Add error handling');
-        quality -= 10;
-    }
-
-    if (/function|class|const.*=.*\(|async/i.test(code)) {
-        quality += 10;
-    }
-
-    if (/\/\/|\/\*|\*\//i.test(code)) {
-        quality += 10;
-    }
-
-    if (/password|secret|key|token/i.test(code)) {
-        analysis.security.push('⚠️ Sensitive data detected');
-        quality -= 5;
-    }
-
-    analysis.performance.push('Consider caching');
-    analysis.codeQuality = Math.min(100, Math.max(0, quality));
-
-    res.json(analysis);
+app.get('/health', (req, res) => {
+    res.json({
+        ok: true,
+        service: 'CodeForge Studio Backend',
+        version: '3.0',
+        workspace: WORKSPACE_ROOT,
+        timestamp: new Date().toISOString()
+    });
 });
 
-// ============= STARTUP =============
-
-app.listen(PORT, () => {
-    console.log(`\n╔════════════════════════════════════════════════════╗`);
-    console.log(`║   CodeForge Studio Backend                         ║`);
-    console.log(`║   Web: http://localhost:${PORT}/vscode_clone.html    ║`);
-    console.log(`║   API: http://localhost:${PORT}/api                     ║`);
-    console.log(`║   Token: ${ADMIN_TOKEN.padEnd(36)}║`);
-    console.log(`╚════════════════════════════════════════════════════╝\n`);
-    console.log('Ready! Open http://localhost:5050/vscode_clone.html in your browser.\n');
+app.get('/', (req, res) => {
+    res.sendFile(path.join(PROJECT_ROOT, 'vscode_clone.html'));
 });
 
-process.on('SIGINT', () => {
-    console.log('\nShutting down...');
+// ============= ERROR HANDLING =============
+
+process.on('uncaughtException', (err) => {
+    console.error('❌ Uncaught Exception:', err);
+});
+
+process.on('unhandledRejection', (reason) => {
+    console.error('❌ Unhandled Rejection:', reason);
+});
+
+// Graceful shutdown
+process.on('SIGTERM', shutdown);
+process.on('SIGINT', shutdown);
+
+function shutdown() {
+    console.log('\n\n🛑 Shutting down gracefully...');
     process.exit(0);
+}
+
+// ============= START SERVER =============
+
+const server = app.listen(PORT, () => {
+    console.log('\n' + '='.repeat(70));
+    console.log('  🚀 CodeForge Studio Backend v3.0');
+    console.log('='.repeat(70));
+    console.log(`\n  📡 Server:    http://localhost:${PORT}`);
+    console.log(`  📂 Workspace: ${WORKSPACE_ROOT}`);
+    console.log(`  🔑 Token:     ${ADMIN_TOKEN}`);
+    console.log(`  🧠 Llama:     ${LLAMA_URL}`);
+    console.log('\n  🌐 Open: http://localhost:' + PORT + '/vscode_clone.html');
+    console.log('\n' + '='.repeat(70) + '\n');
 });
+
+// Extended timeouts
+server.timeout = 600000;
+server.keepAliveTimeout = 610000;
+server.headersTimeout = 620000;
