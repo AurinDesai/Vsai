@@ -1,25 +1,29 @@
 {
   "name": "codeforge-studio",
-  "description": "CodeForge Studio - VS Code-like IDE with AI",
-  "version": "1.0.0",
+  "version": "3.0.0",
+  "description": "Professional VS Code Clone with AI",
   "main": "codeforge_studio_server.js",
   "scripts": {
     "start": "node codeforge_studio_server.js",
-    "dev": "node codeforge_studio_server.js"
+    "dev": "node codeforge_studio_server.js",
+    "install-deps": "npm install"
   },
-  "dependencies": {
-    "express": "^4.18.2",
-    "multer": "^1.4.5-lts.1",
-    "axios": "^1.6.0",
-    "body-parser": "^1.20.2"
-  },
-  "devDependencies": {},
   "keywords": [
     "ide",
-    "editor",
-    "vscode",
-    "ai"
+    "code-editor",
+    "vscode-clone",
+    "ai-assistant"
   ],
-  "author": "",
-  "license": "MIT"
+  "author": "CodeForge",
+  "license": "MIT",
+  "dependencies": {
+    "axios": "^1.13.2",
+    "cors": "^2.8.5",
+    "express": "^4.22.1",
+    "multer": "^1.4.5-lts.1"
+  },
+  "engines": {
+    "node": ">=16.0.0",
+    "npm": ">=8.0.0"
+  }
 }
