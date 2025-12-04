@@ -17,7 +17,7 @@ from pathlib import Path
 # Configuration
 NODE_PORT = 5050
 LLAMA_PORT = 8000
-MODEL_PATH = './models/deepseek-coder-6.7b-instruct-Q3_K_S.gguf'
+MODEL_PATH = './models/deepseek-coder-6.7b-instruct.Q3_K_S.gguf'
 
 # Global process handlers
 node_proc = None
